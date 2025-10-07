@@ -14,6 +14,8 @@
     "moduleResolution": "node", 
     // Enable support for default and named imports
     "esModuleInterop": true, 
+    "allowSyntheticDefaultImports": true,
+    
     // Allow JavaScript files to be imported
     "allowJs": true, 
     // Skip type checking of declaration files
