@@ -1,6 +1,6 @@
 import { Routes, Route } from 'react-router-dom';
 import WriteOnBlock from './components/writeOnBlock';
-import FileEncryptAndUpload from './pages/sendFile';
+import FileEncryptAndUpload from './pages/FileTransfer';
 import RegistryUploader from './pages/RegistryUploader';
 import LandingPage from './pages/LandingPage';
 import { motion } from 'framer-motion';
@@ -468,8 +468,8 @@ function App() {
       <Route path="/registry" element={<RegistryUploader />}></Route>
       {/* <Route path="/" element={<WriteOnBlock />}></Route> */}
       <Route path="/registry" element={<RegistryUploader />}></Route>
-      <Route path='/upload' element={<FileEncryptAndUpload/>}></Route>
-      <Route path='/send' element={<FileTransfer/>} ></Route>
+      <Route path='/upload' element={<FileTransfer/>}></Route>
+      {/* <Route path='/send' element={</>} ></Route> */}
       <Route path='/walletLogin' element={<WalletLoginPage/>}></Route>
     </Routes>
   );
