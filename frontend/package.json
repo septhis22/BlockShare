@@ -10,7 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@coreui/icons": "^3.0.1",
+    "@coreui/icons-react": "^2.3.0",
+    "@lottiefiles/dotlottie-react": "^0.17.4",
     "@phosphor-icons/react": "^2.1.10",
+    "@radix-ui/react-dialog": "^1.1.15",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.3.0",
     "@tailwindcss/vite": "^4.1.14",
@@ -22,6 +26,8 @@
     "ethers": "^6.15.0",
     "form-data": "^4.0.4",
     "framer-motion": "^12.23.22",
+    "from": "^0.1.7",
+    "gsap": "^3.13.0",
     "lucide-react": "^0.545.0",
     "motion": "^12.23.22",
     "pinata": "^2.5.1",
