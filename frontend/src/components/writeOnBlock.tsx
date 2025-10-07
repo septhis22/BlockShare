@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { ethers } from "ethers";
+// Update the path below if your artifact is in a different location
+// Update the path below to the correct location of MyContract.json after compiling your contract
 import contractArtifact from "../../../smart-contracts/artifacts/contracts/MyContracts.sol/MyContract.json";
 import MetaConnect from "./metaConnect";
 

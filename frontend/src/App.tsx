@@ -5,9 +5,11 @@ import RegistryUploader from './pages/RegistryUploader';
 import LandingPage from './pages/LandingPage';
 import { motion } from 'framer-motion';
 import { World } from './components/ui/globe';
-import GlassSurface from "./components/GlassSurface.jsx";
 import { CircleArrowRight } from 'lucide-react';
-import BlurText from "./components/BlurText";
+import BlurText from "./components/BlurText.js";
+import FileTransfer from './pages/FileTransfer.js';
+
+
 
 
 export function GlobeDemo() {
@@ -460,6 +462,7 @@ function App() {
       {/* <Route path="/" element={<WriteOnBlock />}></Route> */}
       <Route path="/registry" element={<RegistryUploader />}></Route>
       <Route path='/upload' element={<FileEncryptAndUpload/>}></Route>
+      <Route path='/send' element={<FileTransfer/>} ></Route>
     </Routes>
   );
 }
