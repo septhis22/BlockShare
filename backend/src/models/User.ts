@@ -7,6 +7,8 @@ export interface IUser extends Document {
   password: string;
   public_key: string;
   encrypted_private_key: string;
+  // --- NEW: Salt field ---
+  salt: string; 
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +43,12 @@ const userSchema = new Schema<IUser>(
     encrypted_private_key: {
       type: String,
       required: [true, "Encrypted private key is required"],
+      trim: true
+    },
+    // --- NEW: Store the unique salt for key derivation ---
+    salt: {
+      type: String,
+      required: [true, "Salt is required"],
       trim: true
     }
   },

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import axios from 'axios';
 
 interface User {
@@ -12,7 +12,8 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string, publicKey: string, encryptedPrivateKey: string) => Promise<void>;
+  // Updated register signature to include salt
+  register: (name: string, email: string, password: string, publicKey: string, encryptedPrivateKey: string, salt: string) => Promise<void>;
   logout: () => void;
   loading: boolean;
 }
@@ -62,14 +63,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const register = async (name: string, email: string, password: string, publicKey: string, encryptedPrivateKey: string) => {
+  // Updated register function definition
+  const register = async (name: string, email: string, password: string, publicKey: string, encryptedPrivateKey: string, salt: string) => {
     try {
       const response = await axios.post('http://localhost:5000/api/auth/signup', {
         name,
         email,
         password,
         public_key: publicKey,
-        encrypted_private_key: encryptedPrivateKey
+        encrypted_private_key: encryptedPrivateKey,
+        salt: salt // --- NEW: Pass the generated salt to the backend ---
       });
       const { user: userData, token: newToken } = response.data.data;
       setUser(userData);

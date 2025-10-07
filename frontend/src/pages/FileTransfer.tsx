@@ -301,41 +301,42 @@ export default function FileTransfer() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="relative">
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-lg flex items-center justify-center shadow-2xl transform hover:rotate-180 transition-all duration-500 group">
-                  <Zap className="w-5 h-5 text-white" />
-                </div>
-                <Sparkles className="absolute -top-1 -right-1 w-3 h-3 text-blue-400 animate-ping" />
-              </div>
               <div>
                 <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
                   BlockShare
                 </span>
                 <div className="flex items-center space-x-1">
                   <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-                  <span className="text-xs text-gray-400 font-mono">Blockchain Secured</span>
+                  <span className="text-xs text-gray-400 font-mono">Send Files</span>
                 </div>
               </div>
             </div>
             
             <nav className="hidden md:flex items-center space-x-1 bg-gray-900/50 rounded-xl p-1 backdrop-blur-sm border border-gray-800">
-              {[
-                { id: 'transfer', icon: Upload, label: 'Send', action: () => setActiveTab('transfer') },
-                { id: 'receive', icon: Download, label: 'Receive', action: () => navigate('/receive') }
-              ].map(({ id, icon: Icon, label, action }) => (
-                <button
-                  key={id}
-                  onClick={action}
-                  className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 ${
-                    activeTab === id
-                      ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg'
-                      : 'text-gray-400 hover:text-white hover:bg-gray-800'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span className="font-semibold text-sm">{label}</span>
-                </button>
-              ))}
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <span className="font-semibold text-sm">Home</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('transfer')}
+                className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 ${
+                  activeTab === 'transfer'
+                    ? 'bg-blue-500/20 backdrop-blur-md border border-blue-400/50 text-white shadow-lg'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                }`}
+              >
+                <Upload className="w-4 h-4" />
+                <span className="font-semibold text-sm">Send</span>
+              </button>
+              <button
+                onClick={() => navigate('/receive')}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <Download className="w-4 h-4" />
+                <span className="font-semibold text-sm">Receive</span>
+              </button>
             </nav>
 
             <div className="flex items-center space-x-3">
@@ -618,7 +619,7 @@ export default function FileTransfer() {
             <button
               onClick={handleEncryptAndUpload}
               disabled={selectedFiles.length === 0 || !recipientAddress || isSending || !isWalletConnected}
-              className="w-full py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg font-bold hover:from-blue-600 hover:to-cyan-600 transition-all duration-500 disabled:opacity-30 disabled:cursor-not-allowed shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:transform-none flex items-center justify-center space-x-2 group relative overflow-hidden"
+              className="w-full py-3 bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 text-white rounded-lg font-bold transition-all duration-500 disabled:opacity-30 disabled:cursor-not-allowed shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:transform-none flex items-center justify-center space-x-2 group relative overflow-hidden"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md" />
               <span className="relative z-10 flex items-center space-x-2">

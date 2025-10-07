@@ -4,7 +4,7 @@ import EthCrypto from "eth-crypto";
 import CryptoJS from "crypto-js";
 import { getRecordFromBlockchain } from "../utils/dataOnChain";
 
-import { Download, Lock, Key, FileText, User, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { Download, Lock, Key, FileText, User, Clock, CheckCircle, AlertCircle, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface SharedFile {
@@ -166,7 +166,15 @@ const ReceiveFiles: React.FC = () => {
                 onClick={() => navigate('/upload')}
                 className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 text-gray-400 hover:text-white hover:bg-gray-800"
               >
-                <span className="font-semibold text-sm">Upload</span>
+                <Upload className="w-4 h-4" />
+                <span className="font-semibold text-sm">Send</span>
+              </button>
+              <button
+                onClick={() => {}}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 bg-blue-500/20 backdrop-blur-md border border-blue-400/50 text-white shadow-lg"
+              >
+                <Download className="w-4 h-4" />
+                <span className="font-semibold text-sm">Receive</span>
               </button>
             </nav>
           </div>

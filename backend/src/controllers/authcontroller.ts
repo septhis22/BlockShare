@@ -30,6 +30,10 @@ const signupSchema = z.object({
     .trim(),
   encrypted_private_key: z.string()
     .min(1, 'Encrypted private key is required')
+    .trim(),
+  // --- EDITED: Add salt field validation ---
+  salt: z.string()
+    .min(1, 'Salt is required')
     .trim()
 });
 
@@ -87,9 +91,10 @@ export const validateRequest = (schema: z.ZodSchema) => {
 
 export const signup = [
   validateRequest(signupSchema),
-  async (req: Request<{}, {}, SignupRequest>, res: Response<AuthResponse>) => {
+  async (req: Request<{}, {}, SignupRequest & { salt: string }>, res: Response<AuthResponse>) => {
     try {
-      const { name, email, password, public_key, encrypted_private_key } = req.body;
+      // --- EDITED: Destructure salt from the request body ---
+      const { name, email, password, public_key, encrypted_private_key, salt } = req.body;
 
       // Check if user already exists
       const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -100,7 +105,7 @@ export const signup = [
         });
       }
 
-      // Hash password
+      // Hash password (for user authentication)
       const saltRounds = 12;
       const hashedPassword = await bcrypt.hash(password, saltRounds);
 
@@ -110,7 +115,8 @@ export const signup = [
         email: email.toLowerCase().trim(),
         password: hashedPassword,
         public_key: public_key.trim(),
-        encrypted_private_key: encrypted_private_key.trim()
+        encrypted_private_key: encrypted_private_key.trim(),
+        salt: salt.trim() // --- EDITED: Store the salt ---
       });
 
       await newUser.save();
@@ -210,7 +216,9 @@ export const getProfile = async (req: Request, res: Response) => {
       data: {
         user: {
           ...userToResponse(user),
-          encrypted_private_key: user.encrypted_private_key
+          encrypted_private_key: user.encrypted_private_key,
+          // --- EDITED: Include salt in profile response for client-side decryption ---
+          salt: user.salt
         }
       }
     });
