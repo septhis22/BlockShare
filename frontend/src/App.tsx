@@ -15,7 +15,7 @@ import FileTransfer from './pages/FileTransfer';
 import WalletLoginPage from './pages/walletLoginPage';
 import ReceiveFiles from './pages/ReceiveFiles';
 import { useAuth } from './context/AuthContext';
-
+import ShinyText from "./components/ShinyText.tsx";
 
 export function GlobeDemo() {
   const { user, logout } = useAuth();
@@ -443,13 +443,11 @@ export function GlobeDemo() {
                 onAnimationComplete={handleAnimationComplete}
                 className="block mb-2 justify-center"
               />
-              <BlurText
-                text="Reimagined"
-                delay={300}
-                animateBy="words"
-                direction="top"
-                onAnimationComplete={handleAnimationComplete}
-                className="block justify-center"
+              <ShinyText 
+                text="Reimagined" 
+                disabled={false} 
+                speed={20} 
+                className='custom-class' 
               />
             </h1>
             <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto">

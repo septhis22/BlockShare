@@ -4,6 +4,9 @@ import EthCrypto from "eth-crypto";
 import CryptoJS from "crypto-js";
 import { getRecordFromBlockchain } from "../utils/dataOnChain";
 
+import { Download, Lock, Key, FileText, User, Clock, CheckCircle, AlertCircle } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+
 interface SharedFile {
   id: string;
   recordId: string;
@@ -21,6 +24,7 @@ const ReceiveFiles: React.FC = () => {
   const [password, setPassword] = useState<string>("");
   const [decryptedPrivateKey, setDecryptedPrivateKey] = useState<string>("");
   const [privateKey, setPrivateKey] = useState<string>("");
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchSharedFiles();
@@ -128,42 +132,161 @@ const ReceiveFiles: React.FC = () => {
   };
 
   return (
-    <div className="p-6">
-      <h2 className="text-lg font-semibold mb-4">Received Files</h2>
-      <div className="mb-4">
-        <input
-          type="password"
-          placeholder="Your Account Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full p-2 border rounded mb-2"
-        />
-        <button onClick={decryptPrivateKey} className="px-4 py-2 bg-blue-500 text-white rounded">
-          Decrypt Private Key
-        </button>
+    <div className="min-h-screen bg-black text-white relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/3 right-1/3 w-80 h-80 bg-blue-400/5 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}} />
+        <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-cyan-500/5 rounded-full blur-2xl animate-pulse" style={{animationDelay: '4s'}} />
       </div>
-      {sharedFiles.length === 0 ? (
-        <p>No shared files yet.</p>
-      ) : (
-        <ul className="space-y-2">
-          {sharedFiles.map((file) => (
-            <li key={file.id} className="border p-4 rounded flex justify-between items-center">
+
+      {/* Header */}
+      <header className="relative z-50 bg-black/90 backdrop-blur-xl border-b border-gray-800 sticky top-0 shadow-2xl">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-3">
               <div>
-                <p><strong>{file.fileName}</strong></p>
-                <p>From: {file.sender.name} ({file.sender.email})</p>
-                <p>Shared at: {new Date(file.sharedAt).toLocaleString()}</p>
+                <span className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                  BlockShare
+                </span>
+                <div className="flex items-center space-x-1">
+                  <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                  <span className="text-xs text-gray-400 font-mono">Receive Files</span>
+                </div>
+              </div>
+            </div>
+            <nav className="hidden md:flex items-center space-x-1 bg-gray-900/50 rounded-xl p-1 backdrop-blur-sm border border-gray-800">
+              <button
+                onClick={() => navigate('/')}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <span className="font-semibold text-sm">Home</span>
+              </button>
+              <button
+                onClick={() => navigate('/upload')}
+                className="flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <span className="font-semibold text-sm">Upload</span>
+              </button>
+            </nav>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="relative z-40 max-w-4xl mx-auto px-6 py-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+            Receive Secure Files
+          </h1>
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+            Decrypt and download files shared with you using end-to-end encryption
+          </p>
+        </div>
+
+        {/* Private Key Decryption Section */}
+        <div className="mb-8 bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-6 border border-gray-800 hover:border-blue-500/30 transition-all duration-300">
+          <div className="mb-4">
+            <h3 className="flex items-center space-x-3 text-white text-lg font-semibold mb-2">
+              <div className="p-2 bg-blue-500/20 rounded-lg">
+                <Key className="w-5 h-5 text-blue-400" />
+              </div>
+              <span>Decrypt Your Private Key</span>
+            </h3>
+            <p className="text-gray-400 text-sm">
+              Enter your account password to unlock your encryption keys
+            </p>
+          </div>
+          <div>
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1">
+                <input
+                  type="password"
+                  placeholder="Enter your account password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:border-blue-500 focus:outline-none transition-colors"
+                />
               </div>
               <button
-                onClick={() => downloadFile(file.recordId, file.fileName)}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                disabled={loading}
+                onClick={decryptPrivateKey}
+                className="bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 px-6 py-3 rounded-lg font-semibold transition text-white flex items-center gap-2"
               >
-                {loading ? "Downloading..." : "Download"}
+                <Lock className="w-4 h-4" />
+                <span>Decrypt Key</span>
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
+            </div>
+            {decryptedPrivateKey && (
+              <div className="mt-4 flex items-center space-x-2 text-green-400">
+                <CheckCircle className="w-4 h-4" />
+                <span className="text-sm">Private key decrypted successfully</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Shared Files Section */}
+        <div className="space-y-6">
+          <h2 className="text-2xl font-bold text-white flex items-center space-x-3">
+            <FileText className="w-6 h-6 text-blue-400" />
+            <span>Shared Files</span>
+          </h2>
+
+          {sharedFiles.length === 0 ? (
+            <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-12 border border-gray-800 text-center">
+              <AlertCircle className="w-12 h-12 text-gray-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-400 mb-2">No Files Yet</h3>
+              <p className="text-gray-500">Files shared with you will appear here</p>
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {sharedFiles.map((file, index) => (
+                <div
+                  key={file.id}
+                  className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-6 border border-gray-800 hover:border-blue-500/30 transition-all duration-300 animate-fade-in"
+                  style={{ animationDelay: `${index * 0.1}s` }}
+                >
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-2">
+                          <FileText className="w-5 h-5 text-blue-400" />
+                          <h3 className="text-lg font-semibold text-white">{file.fileName}</h3>
+                        </div>
+                        <div className="space-y-1 text-sm text-gray-400">
+                          <div className="flex items-center space-x-2">
+                            <User className="w-4 h-4" />
+                            <span>From: {file.sender.name} ({file.sender.email})</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Clock className="w-4 h-4" />
+                            <span>Shared: {new Date(file.sharedAt).toLocaleString()}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => downloadFile(file.recordId, file.fileName)}
+                        disabled={loading || !decryptedPrivateKey}
+                        className="bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 px-6 py-3 rounded-lg font-semibold transition text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {loading ? (
+                          <>
+                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            <span>Downloading...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Download className="w-4 h-4" />
+                            <span>Download</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 };
