@@ -12,7 +12,7 @@ export async function uploadToPinata(encryptedBlob: Blob, fileName: string) {
     const file = new File([encryptedBlob], fileName, { type: "application/octet-stream" });
     const upload = await pinata.upload.public.file(file);
     console.log('📦 Uploaded to Pinata:', upload);
-    return upload.IpfsHash; // this is your CID
+    return upload.cid; // this is your CID
   } catch (error) {
     console.log(error);
     throw error;
