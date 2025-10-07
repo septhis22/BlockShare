@@ -455,14 +455,11 @@ export function GlobeDemo() {
 function App() {
   return (
     <Routes>
-<<<<<<< HEAD
       <Route path="/" element={<GlobeDemo />}></Route>
       <Route path="/registry" element={<RegistryUploader />}></Route>
-=======
       {/* <Route path="/" element={<WriteOnBlock />}></Route> */}
       <Route path="/registry" element={<RegistryUploader />}></Route>
       <Route path='/upload' element={<FileEncryptAndUpload/>}></Route>
->>>>>>> 5186e5b (block and ipsf working)
     </Routes>
   );
 }
