@@ -12,6 +12,7 @@ import FadeContent from './components/FadeContent'
 import MagicBento from "./components/MagicBento";
 import { LoginDialog } from "./components/ui/login-dialog";
 import { RegisterDialog } from "./components/ui/register-dialog";
+import FileTransfer from './pages/FileTransfer';
 
 
 export function GlobeDemo() {
