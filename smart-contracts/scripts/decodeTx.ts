@@ -4,7 +4,7 @@ import contractArtifact from "../../smart-contracts/artifacts/contracts/MyContra
 
 async function main() {
   // 👇 Replace this with your real tx hash from MetaMask or Hardhat logs
-    const txHash = "0xfec04dd2d2f6bfab5f7485c2ad2d167ab3c639f526db76dc45926011e3c2ac16";
+    const txHash = "0x694d03dde25d47d5c7f0f055acf9432494ee5ce745d92b5bae426c83281a2792";
 
   // Connect to local Hardhat chain
   const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");

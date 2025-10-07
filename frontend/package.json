@@ -13,9 +13,11 @@
     "axios": "^1.12.2",
     "ethers": "^6.15.0",
     "form-data": "^4.0.4",
+    "pinata": "^2.5.1",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.3"
+    "react-router-dom": "^7.9.3",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
