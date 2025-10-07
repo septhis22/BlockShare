@@ -37,3 +37,22 @@ export async function uploadRecordToBlockchain(
   await tx.wait();
   return { recordId, txHash: tx.hash };
 }
+
+export async function getRecordFromBlockchain(recordId: string): Promise<{ eCID: string; eDEK: string; dHash: string; time: number }> {
+  if (!window.ethereum) throw new Error("MetaMask not found.");
+
+  const provider = new ethers.BrowserProvider(window.ethereum);
+  const contract = new Contract(CONTRACT_ADDRESS, contractArtifact.abi, provider);
+
+  if (!contract.getRecord) {
+    throw new Error("getRecord() not found in contract ABI.");
+  }
+
+  const record = await contract.getRecord(recordId);
+  return {
+    eCID: record[0],
+    eDEK: record[1],
+    dHash: record[2],
+    time: Number(record[3])
+  };
+}

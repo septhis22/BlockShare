@@ -1,6 +1,5 @@
 import { Routes, Route } from 'react-router-dom';
 import WriteOnBlock from './components/writeOnBlock';
-import FileEncryptAndUpload from './pages/FileTransfer';
 import RegistryUploader from './pages/RegistryUploader';
 import LandingPage from './pages/LandingPage';
 import { motion } from 'framer-motion';
@@ -14,9 +13,12 @@ import { LoginDialog } from "./components/ui/login-dialog";
 import { RegisterDialog } from "./components/ui/register-dialog";
 import FileTransfer from './pages/FileTransfer';
 import WalletLoginPage from './pages/walletLoginPage';
+import ReceiveFiles from './pages/ReceiveFiles';
+import { useAuth } from './context/AuthContext';
 
 
 export function GlobeDemo() {
+  const { user, logout } = useAuth();
   const handleAnimationComplete = () => {
     console.log('Animation complete');
   };
@@ -413,7 +415,18 @@ export function GlobeDemo() {
         <nav className="absolute top-0 left-0 right-0 z-20 bg-transparent">
           <div className="flex justify-between items-center px-6 py-4">
             <div className="text-white text-xl top-0 font-bold">BlockShare</div>
-            <LoginDialog />
+            <div className="flex items-center gap-4">
+              {user ? (
+                <>
+                  <span className="text-white">Welcome, {user.name}</span>
+                  <button onClick={logout} className="text-white border border-white px-4 py-2 rounded hover:bg-white hover:text-black transition">
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <LoginDialog />
+              )}
+            </div>
           </div>
         </nav>
         <div className="absolute top-52 left-0 right-0 bottom-0">
@@ -466,10 +479,8 @@ function App() {
     <Routes>
       <Route path="/" element={<GlobeDemo />}></Route>
       <Route path="/registry" element={<RegistryUploader />}></Route>
-      {/* <Route path="/" element={<WriteOnBlock />}></Route> */}
-      <Route path="/registry" element={<RegistryUploader />}></Route>
       <Route path='/upload' element={<FileTransfer/>}></Route>
-      {/* <Route path='/send' element={</>} ></Route> */}
+      <Route path='/receive' element={<ReceiveFiles/>}></Route>
       <Route path='/walletLogin' element={<WalletLoginPage/>}></Route>
     </Routes>
   );

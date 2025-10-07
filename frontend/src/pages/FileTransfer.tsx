@@ -1,9 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import EthCrypto from 'eth-crypto';
 import { Upload,  Download, LogOut, User, Shield, Zap, Sparkles, Cloud, FileText, X, Lock, Key } from 'lucide-react';
 import CryptoJS from 'crypto-js';
 import { uploadToPinata } from '../utils/pinataUploads';
 import { uploadRecordToBlockchain } from '../utils/dataOnChain';
 import MetaConnect from "../components/metaConnect";
+import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface UploadResult {
   name: string;
@@ -22,12 +26,13 @@ interface SelectedFile {
 }
 
 export default function FileTransfer() {
+  const { user, logout, token } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('transfer');
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [recipientAddress, setRecipientAddress] = useState('');
   const [endToEndEncryption, setEndToEndEncryption] = useState(true);
   const [setExpiryDate, setSetExpiryDate] = useState(false);
-  const [userName] = useState('John Doe');
   const [dragActive, setDragActive] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
@@ -106,6 +111,10 @@ export default function FileTransfer() {
   };
 
   const handleEncryptAndUpload = async () => {
+    if (!user) {
+      alert("Please login first");
+      return;
+    }
     if (selectedFiles.length === 0 || !recipientAddress) return;
 
     setIsSending(true);
@@ -113,25 +122,56 @@ export default function FileTransfer() {
 
     const results: UploadResult[] = [];
 
+    // Get recipient's public key
+    let recipientPublicKey: string;
+    try {
+      const response = await axios.get(`http://localhost:5000/api/auth/user?email=${encodeURIComponent(recipientAddress)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      recipientPublicKey = response.data.data.user.public_key;
+      console.log("✅ Recipient public key:", recipientPublicKey);
+      console.log("Length:", recipientPublicKey.length);
+
+      // Validate public key format (compressed: 68 chars)
+      if (!recipientPublicKey.startsWith('0x') || recipientPublicKey.length !== 68) {
+        alert(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 68 characters. They may need to re-register.`);
+        setIsSending(false);
+        return;
+      }
+    } catch (err: any) {
+      console.error("❌ Failed to get recipient public key:", err);
+      const errorMessage = err.response?.data?.message || "Failed to find recipient or get their public key";
+      alert(errorMessage);
+      setIsSending(false);
+      return;
+    }
+
     for (const selectedFile of selectedFiles) {
       try {
-        // 1️⃣ Encrypt
+        // 1️⃣ Encrypt file
         const { encryptedBlob, dek } = await encryptFile(selectedFile.file);
 
-        // 2️⃣ Upload to Pinata
+        // 2️⃣ Encrypt DEK with recipient's public key (remove 0x prefix)
+        const publicKeyForEncryption = recipientPublicKey.startsWith('0x') ? recipientPublicKey.slice(2) : recipientPublicKey;
+        console.log("Encrypting with public key (without 0x):", publicKeyForEncryption);
+        const encryptedDek = await EthCrypto.encryptWithPublicKey(publicKeyForEncryption, dek);
+        const encryptedDekString = EthCrypto.cipher.stringify(encryptedDek);
+        console.log("Encrypted DEK:", encryptedDekString);
+
+        // 3️⃣ Upload to Pinata
         const response = await uploadToPinata(encryptedBlob, selectedFile.name + ".enc");
         console.log("📦 Pinata response:", response);
 
         // ✅ SAFE CID EXTRACTION - handles all cases
         let eCID: string | null = null;
-        
+
         if (typeof response === "string") {
           eCID = response;
         } else if (response && typeof response === "object") {
-          eCID = (response as any).IpfsHash || 
-                 (response as any).cid || 
-                 (response as any).CID ||
-                 null;
+          eCID = (response as any).IpfsHash ||
+                  (response as any).cid ||
+                  (response as any).CID ||
+                  null;
         }
 
         if (!eCID) {
@@ -141,28 +181,45 @@ export default function FileTransfer() {
 
         console.log("✅ Extracted CID:", eCID);
 
-        // 3️⃣ Compute hash of encrypted data
+        // 4️⃣ Compute hash of encrypted data
         const arrayBuffer = await encryptedBlob.arrayBuffer();
         const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer as any);
         const dHash = CryptoJS.SHA256(wordArray).toString();
 
-        // 4️⃣ Store on blockchain
+        // 5️⃣ Store on blockchain
         try {
-          const { recordId, txHash } = await uploadRecordToBlockchain(eCID, dek, dHash);
-          results.push({ 
-            name: selectedFile.name, 
-            ipfsHash: eCID, 
-            dek, 
-            recordId, 
-            txHash 
+          const { recordId, txHash } = await uploadRecordToBlockchain(eCID, encryptedDekString, dHash);
+
+          // 6️⃣ Share with recipient via backend
+          try {
+            await axios.post('http://localhost:5000/api/shared/share', {
+              receiverEmail: recipientAddress,
+              recordId,
+              fileName: selectedFile.name
+            }, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            console.log(`✅ File ${selectedFile.name} shared with recipient.`);
+          } catch (shareErr: any) {
+            console.error(`❌ Failed to share ${selectedFile.name} with recipient:`, shareErr);
+            const shareError = shareErr.response?.data?.message || "Failed to share file";
+            console.error("Share error:", shareError);
+          }
+
+          results.push({
+            name: selectedFile.name,
+            ipfsHash: eCID,
+            dek: encryptedDekString,
+            recordId,
+            txHash
           });
           console.log(`✅ File ${selectedFile.name} uploaded & stored on-chain.`);
         } catch (err) {
           console.error(`❌ Blockchain upload failed for ${selectedFile.name}:`, err);
-          results.push({ 
-            name: selectedFile.name, 
-            ipfsHash: eCID, 
-            dek 
+          results.push({
+            name: selectedFile.name,
+            ipfsHash: eCID,
+            dek: encryptedDekString
           });
         }
       } catch (err) {
@@ -172,7 +229,7 @@ export default function FileTransfer() {
 
     setUploadResults(results);
     setIsSending(false);
-    
+
     if (results.length > 0) {
       setSelectedFiles([]);
       setRecipientAddress('');
@@ -263,12 +320,12 @@ export default function FileTransfer() {
             
             <nav className="hidden md:flex items-center space-x-1 bg-gray-900/50 rounded-xl p-1 backdrop-blur-sm border border-gray-800">
               {[
-                { id: 'transfer', icon: Upload, label: 'Send' },
-                { id: 'receive', icon: Download, label: 'Receive' }
-              ].map(({ id, icon: Icon, label }) => (
+                { id: 'transfer', icon: Upload, label: 'Send', action: () => setActiveTab('transfer') },
+                { id: 'receive', icon: Download, label: 'Receive', action: () => navigate('/receive') }
+              ].map(({ id, icon: Icon, label, action }) => (
                 <button
                   key={id}
-                  onClick={() => setActiveTab(id)}
+                  onClick={action}
                   className={`flex items-center space-x-2 px-5 py-2.5 rounded-lg transition-all duration-300 ${
                     activeTab === id
                       ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white shadow-lg'
@@ -283,24 +340,27 @@ export default function FileTransfer() {
 
             <div className="flex items-center space-x-3">
               <MetaConnect onConnected={handleWalletConnected} />
-              <div className="flex items-center space-x-3 bg-gray-900/60 px-4 py-2 rounded-xl shadow-xl border border-gray-800 backdrop-blur-sm hover:bg-gray-800/60 transition-all duration-300 group">
-                <div className="relative">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg">
-                    <User className="w-4 h-4 text-white" />
-                  </div>
-                </div>
-                <div>
-                  <span className="font-semibold text-white text-sm">{userName}</span>
-                  <div className="flex items-center space-x-1">
-                    <Shield className="w-3 h-3 text-green-400" />
-                    <span className="text-xs text-green-400">Verified</span>
-                  </div>
-                </div>
-              </div>
-              <button className="flex items-center space-x-2 px-3 py-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all duration-300 border border-red-500/20 hover:border-red-500/40 hover:shadow-lg group">
-                <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                <span className="font-semibold text-sm">Logout</span>
-              </button>
+               <div className="flex items-center space-x-3 bg-gray-900/60 px-4 py-2 rounded-xl shadow-xl border border-gray-800 backdrop-blur-sm hover:bg-gray-800/60 transition-all duration-300 group">
+                 <div className="relative">
+                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg">
+                     <User className="w-4 h-4 text-white" />
+                   </div>
+                 </div>
+                 <div>
+                   <span className="font-semibold text-white text-sm">{user?.name || 'User'}</span>
+                   <div className="flex items-center space-x-1">
+                     <Shield className="w-3 h-3 text-green-400" />
+                     <span className="text-xs text-green-400">Verified</span>
+                   </div>
+                 </div>
+               </div>
+               <button
+                 onClick={logout}
+                 className="flex items-center space-x-2 px-3 py-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all duration-300 border border-red-500/20 hover:border-red-500/40 hover:shadow-lg group"
+               >
+                 <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                 <span className="font-semibold text-sm">Logout</span>
+               </button>
             </div>
           </div>
         </div>

@@ -6,15 +6,28 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-
+import { useAuth } from "../../context/AuthContext";
 
 export function LoginDialog() {
   const [open, setOpen] = useState(false);
-  const [seedPhrase, setSeedPhrase] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
 
-  const handleLogin = () => {
-    // Handle login logic here
-    console.log("Login with seed phrase:", seedPhrase);
+  const handleLogin = async () => {
+    setLoading(true);
+    try {
+      await login(email, password);
+      setOpen(false);
+      setEmail("");
+      setPassword("");
+    } catch (error) {
+      console.error("Login failed:", error);
+      alert("Login failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -32,22 +45,35 @@ export function LoginDialog() {
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
-            <label htmlFor="seedPhrase" className="text-sm font-medium text-white">
-              12-Word Seed Phrase
+            <label htmlFor="email" className="text-sm font-medium text-white">
+              Email
             </label>
-            <textarea
-              id="seedPhrase"
-              value={seedPhrase}
-              onChange={(e) => setSeedPhrase(e.target.value)}
-              className="w-full px-4 py-3 border border-zinc-600 bg-zinc-800 text-white rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 placeholder-zinc-400"
-              placeholder="Enter your 12-word seed phrase separated by spaces"
-              rows={3}
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-4 py-3 border border-zinc-600 bg-zinc-800 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 placeholder-zinc-400"
+              placeholder="Enter your email"
+            />
+          </div>
+          <div className="space-y-2">
+            <label htmlFor="password" className="text-sm font-medium text-white">
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-zinc-600 bg-zinc-800 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 placeholder-zinc-400"
+              placeholder="Enter your password"
             />
           </div>
         </div>
         <div className="flex justify-end">
-          <button onClick={handleLogin} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-            Login
+          <button onClick={handleLogin} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
+            {loading ? "Logging in..." : "Login"}
           </button>
         </div>
       </DialogContent>
