@@ -15,9 +15,13 @@
     "@react-three/fiber": "^9.3.0",
     "@tailwindcss/vite": "^4.1.14",
     "axios": "^1.12.2",
+<<<<<<< HEAD
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cobe": "^0.6.5",
+=======
+    "crypto-js": "^4.2.0",
+>>>>>>> 5186e5b (block and ipsf working)
     "ethers": "^6.15.0",
     "form-data": "^4.0.4",
     "framer-motion": "^12.23.22",
@@ -35,6 +39,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@types/crypto-js": "^4.2.2",
     "@types/form-data": "^2.2.1",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
