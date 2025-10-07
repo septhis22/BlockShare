@@ -12,6 +12,8 @@ import FadeContent from './components/FadeContent'
 import MagicBento from "./components/MagicBento";
 import { LoginDialog } from "./components/ui/login-dialog";
 import { RegisterDialog } from "./components/ui/register-dialog";
+import FileTransfer from './pages/FileTransfer';
+import WalletLoginPage from './pages/walletLoginPage';
 
 
 export function GlobeDemo() {
@@ -468,6 +470,7 @@ function App() {
       <Route path="/registry" element={<RegistryUploader />}></Route>
       <Route path='/upload' element={<FileEncryptAndUpload/>}></Route>
       <Route path='/send' element={<FileTransfer/>} ></Route>
+      <Route path='/walletLogin' element={<WalletLoginPage/>}></Route>
     </Routes>
   );
 }
