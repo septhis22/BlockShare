@@ -6,10 +6,12 @@ import LandingPage from './pages/LandingPage';
 import { motion } from 'framer-motion';
 import { World } from './components/ui/globe';
 import { CircleArrowRight } from 'lucide-react';
-import BlurText from "./components/BlurText.js";
-import FileTransfer from './pages/FileTransfer.js';
-
-
+import BlurText from "./components/BlurText";
+import GradientText from './components/GradientText'
+import FadeContent from './components/FadeContent'
+import MagicBento from "./components/MagicBento";
+import { LoginDialog } from "./components/ui/login-dialog";
+import { RegisterDialog } from "./components/ui/register-dialog";
 
 
 export function GlobeDemo() {
@@ -404,51 +406,54 @@ export function GlobeDemo() {
   ];
 
   return (
-    <div className="h-screen w-full dark:bg-black bg-white relative font-mono">
-      <nav className="absolute top-0 left-0 right-0 z-20 bg-transparent">
-        <div className="flex justify-between items-center px-6 py-4">
-          <div className="text-white text-xl top-0 font-bold">BlockShare</div>
-          <button className="text-white px-4 py-2 border border-white rounded hover:bg-white hover:text-black transition">
-            Login
-          </button>
+    <div className="w-full dark:bg-black bg-white relative font-mono">
+      <div className="h-screen w-full relative">
+        <nav className="absolute top-0 left-0 right-0 z-20 bg-transparent">
+          <div className="flex justify-between items-center px-6 py-4">
+            <div className="text-white text-xl top-0 font-bold">BlockShare</div>
+            <LoginDialog />
+          </div>
+        </nav>
+        <div className="absolute top-52 left-0 right-0 bottom-0">
+          <World data={sampleArcs} globeConfig={globeConfig} />
         </div>
-      </nav>
-      <div className="absolute top-52 left-0 right-0 bottom-0">
-        <World data={sampleArcs} globeConfig={globeConfig} />
-      </div>
-      <div className="absolute inset-0 flex items-start justify-center z-10 pt-60">
-        <div className="text-center text-white px-4">
-          <h1 className="text-4xl md:text-6xl font-bold mb-4">
-            <BlurText
-              text="Confidential File Sharing"
-              delay={150}
-              animateBy="words"
-              direction="top"
-              onAnimationComplete={handleAnimationComplete}
-              className="block mb-2 justify-center"
-            />
-            <BlurText
-              text="Reimagined"
-              delay={300}
-              animateBy="words"
-              direction="top"
-              onAnimationComplete={handleAnimationComplete}
-              className="block justify-center"
-            />
-          </h1>
-          <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto">
-          A secure, verifiable system that enables organizations to share sensitive files without relying on a central authority and unparalleled security.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <button className="bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 px-8 py-3 rounded-lg font-semibold transition text-white flex items-center gap-2">
-              Get Started
-              <span><CircleArrowRight size={20} /></span>
-            </button>
-            <button className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
-              Learn More
-            </button>
+        <div className="absolute inset-0 flex items-start justify-center z-10 pt-60">
+          <div className="text-center text-white px-4">
+            <h1 className="text-4xl md:text-6xl font-bold mb-4">
+              <BlurText
+                text="Confidential File Sharing"
+                delay={150}
+                animateBy="words"
+                direction="top"
+                onAnimationComplete={handleAnimationComplete}
+                className="block mb-2 justify-center"
+              />
+              <BlurText
+                text="Reimagined"
+                delay={300}
+                animateBy="words"
+                direction="top"
+                onAnimationComplete={handleAnimationComplete}
+                className="block justify-center"
+              />
+            </h1>
+            <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto">
+            A secure, verifiable system that enables organizations to share sensitive files without relying on a central authority and unparalleled security.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <RegisterDialog />
+              <button className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
+                Learn More
+              </button>
+            </div>
           </div>
         </div>
+      </div>
+      <div className="relative z-10 w-full flex items-center flex-col justify-center bg-black py-20">
+        <h2 className="text-4xl md:text-5xl font-bold text-white text-center mb-12">
+          Features
+        </h2>
+        <MagicBento />
       </div>
     </div>
   );
