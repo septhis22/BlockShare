@@ -5,6 +5,7 @@ export interface SignupRequest {
   email: string;
   password: string;
   public_key: string;
+  encrypted_private_key: string;
 }
 
 export interface LoginRequest {

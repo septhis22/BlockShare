@@ -32,7 +32,7 @@ export const validateSignup = (req: Request, res: Response, next: NextFunction) 
     signupSchema.parse(req.body); // Throws if validation fails
     next();
   } catch (err: any) {
-    return res.status(400).json({ error: err.errors[0].message });
+    return res.status(400).json({ error: err.issues[0].message });
   }
 };
 
@@ -42,6 +42,6 @@ export const validateLogin = (req: Request, res: Response, next: NextFunction) =
     loginSchema.parse(req.body);
     next();
   } catch (err: any) {
-    return res.status(400).json({ error: err.errors[0].message });
+    return res.status(400).json({ error: err.issues[0].message });
   }
 };

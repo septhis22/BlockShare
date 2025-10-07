@@ -3,12 +3,12 @@ import bcrypt from 'bcryptjs';
 import { sign, SignOptions, Secret } from 'jsonwebtoken';
 import { z } from 'zod';
 import User, { IUser } from '../models/User';
-import { 
-  SignupRequest, 
-  LoginRequest, 
-  AuthResponse, 
+import {
+  SignupRequest,
+  LoginRequest,
+  AuthResponse,
   UserResponse,
-  AuthenticatedRequest 
+  JwtPayload
 } from '../types/auth';
 
 // Zod validation schemas
@@ -23,10 +23,13 @@ const signupSchema = z.object({
     .trim(),
   password: z.string()
     .min(6, 'Password must be at least 6 characters long')
-    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
       'Password must contain at least one lowercase letter, one uppercase letter, and one number'),
   public_key: z.string()
     .min(10, 'Public key must be at least 10 characters long')
+    .trim(),
+  encrypted_private_key: z.string()
+    .min(1, 'Encrypted private key is required')
     .trim()
 });
 
@@ -86,7 +89,7 @@ export const signup = [
   validateRequest(signupSchema),
   async (req: Request<{}, {}, SignupRequest>, res: Response<AuthResponse>) => {
     try {
-      const { name, email, password, public_key } = req.body;
+      const { name, email, password, public_key, encrypted_private_key } = req.body;
 
       // Check if user already exists
       const existingUser = await User.findOne({ email: email.toLowerCase() });
@@ -106,7 +109,8 @@ export const signup = [
         name: name.trim(),
         email: email.toLowerCase().trim(),
         password: hashedPassword,
-        public_key: public_key.trim()
+        public_key: public_key.trim(),
+        encrypted_private_key: encrypted_private_key.trim()
       });
 
       await newUser.save();
@@ -181,16 +185,17 @@ export const login = [
   }
 ];
 
-export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
+export const getProfile = async (req: Request, res: Response) => {
   try {
-    if (!req.user) {
+    const userPayload = req.user as JwtPayload;
+    if (!userPayload) {
       return res.status(401).json({
         success: false,
         message: 'User not authenticated'
       });
     }
 
-    const user = await User.findById(req.user.userId);
+    const user = await User.findById(userPayload.userId);
     
     if (!user) {
       return res.status(404).json({
@@ -202,13 +207,65 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
     res.status(200).json({
       success: true,
       message: 'Profile retrieved successfully',
-      data: { 
-        user: userToResponse(user)
+      data: {
+        user: {
+          ...userToResponse(user),
+          encrypted_private_key: user.encrypted_private_key
+        }
       }
     });
 
   } catch (error) {
     console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
+export const getUserByEmail = async (req: Request, res: Response) => {
+  try {
+    const userPayload = req.user as JwtPayload;
+    if (!userPayload) {
+      return res.status(401).json({
+        success: false,
+        message: 'User not authenticated'
+      });
+    }
+
+    const { email } = req.query;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Email query parameter is required'
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'User retrieved successfully',
+      data: {
+        user: {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          public_key: user.public_key
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get user by email error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

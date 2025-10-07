@@ -18,6 +18,8 @@ interface SharedFile {
 const ReceiveFiles: React.FC = () => {
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [loading, setLoading] = useState(false);
+  const [password, setPassword] = useState<string>("");
+  const [decryptedPrivateKey, setDecryptedPrivateKey] = useState<string>("");
   const [privateKey, setPrivateKey] = useState<string>("");
 
   useEffect(() => {
@@ -42,8 +44,8 @@ const ReceiveFiles: React.FC = () => {
   };
 
   const downloadFile = async (recordId: string, fileName: string) => {
-    if (!privateKey) {
-      alert("Please enter your private key");
+    if (!decryptedPrivateKey) {
+      alert("Please decrypt your private key first");
       return;
     }
 
@@ -53,10 +55,9 @@ const ReceiveFiles: React.FC = () => {
       const record = await getRecordFromBlockchain(recordId);
       const { eCID, eDEK, dHash } = record;
 
-      // Decrypt DEK with private key (ensure private key format)
-      const privateKeyClean = privateKey.startsWith('0x') ? privateKey.slice(2) : privateKey;
+      // Decrypt DEK with private key
       const encryptedDekObj = EthCrypto.cipher.parse(eDEK);
-      const decryptedDek = await EthCrypto.decryptWithPrivateKey(privateKeyClean, encryptedDekObj);
+      const decryptedDek = await EthCrypto.decryptWithPrivateKey(decryptedPrivateKey, encryptedDekObj);
 
       // Fetch encrypted file from IPFS
       const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${eCID}`, {
@@ -102,16 +103,45 @@ const ReceiveFiles: React.FC = () => {
     }
   };
 
+  const decryptPrivateKey = async () => {
+    if (!password) {
+      alert("Enter your password");
+      return;
+    }
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get("http://localhost:5000/api/auth/profile", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const encryptedPrivKey = response.data.data.user.encrypted_private_key;
+      const decrypted = CryptoJS.AES.decrypt(encryptedPrivKey, password).toString(CryptoJS.enc.Utf8);
+      if (!decrypted) {
+        alert("Wrong password");
+        return;
+      }
+      setDecryptedPrivateKey(decrypted);
+      alert("Private key decrypted successfully");
+    } catch (error) {
+      console.error("Failed to decrypt private key:", error);
+      alert("Failed to decrypt private key");
+    }
+  };
+
   return (
     <div className="p-6">
       <h2 className="text-lg font-semibold mb-4">Received Files</h2>
-      <input
-        type="password"
-        placeholder="Your Private Key"
-        value={privateKey}
-        onChange={(e) => setPrivateKey(e.target.value)}
-        className="w-full p-2 border rounded mb-4"
-      />
+      <div className="mb-4">
+        <input
+          type="password"
+          placeholder="Your Account Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full p-2 border rounded mb-2"
+        />
+        <button onClick={decryptPrivateKey} className="px-4 py-2 bg-blue-500 text-white rounded">
+          Decrypt Private Key
+        </button>
+      </div>
       {sharedFiles.length === 0 ? (
         <p>No shared files yet.</p>
       ) : (

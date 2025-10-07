@@ -132,9 +132,9 @@ export default function FileTransfer() {
       console.log("✅ Recipient public key:", recipientPublicKey);
       console.log("Length:", recipientPublicKey.length);
 
-      // Validate public key format (compressed: 68 chars)
-      if (!recipientPublicKey.startsWith('0x') || recipientPublicKey.length !== 68) {
-        alert(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 68 characters. They may need to re-register.`);
+      // Validate public key format (EthCrypto uncompressed: 128 chars)
+      if (recipientPublicKey.length !== 128) {
+        alert(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 128 characters. They may need to re-register.`);
         setIsSending(false);
         return;
       }

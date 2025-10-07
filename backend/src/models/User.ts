@@ -6,6 +6,7 @@ export interface IUser extends Document {
   email: string;
   password: string;
   public_key: string;
+  encrypted_private_key: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -32,9 +33,14 @@ const userSchema = new Schema<IUser>(
       required: [true, "Password is required"],
       minlength: [6, "Password must be at least 6 characters"]
     },
-    public_key: { 
-      type: String, 
+    public_key: {
+      type: String,
       required: [true, "Public key is required"],
+      trim: true
+    },
+    encrypted_private_key: {
+      type: String,
+      required: [true, "Encrypted private key is required"],
       trim: true
     }
   },
