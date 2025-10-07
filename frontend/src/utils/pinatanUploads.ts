@@ -1,19 +1,20 @@
-import axios from 'axios';
+import { PinataSDK } from 'pinata';
 
-const PINATA_URL = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
-const PINATA_JWT = import.meta.env.VITE_PINATA_JWT; // store in .env
+const PINATA_JWT = import.meta.env.VITE_PINATA_JWT; 
+
+const pinata = new PinataSDK({
+  pinataJwt: PINATA_JWT,
+  pinataGateway: import.meta.env.VITE_GATEWAY_URL
+});
 
 export async function uploadToPinata(encryptedBlob: Blob, fileName: string) {
-  const formData = new FormData();
-  formData.append('file', encryptedBlob, fileName);
-
-  const res = await axios.post(PINATA_URL, formData, {
-    maxBodyLength: Infinity,
-    headers: {
-      'Authorization': `Bearer ${PINATA_JWT}`,
-    },
-  });
-
-  console.log('📦 Uploaded to Pinata:', res.data);
-  return res.data.IpfsHash; // this is your CID
+  try {
+    const file = new File([encryptedBlob], fileName, { type: "application/octet-stream" });
+    const upload = await pinata.upload.public.file(file);
+    console.log('📦 Uploaded to Pinata:', upload);
+    return upload.IpfsHash; // this is your CID
+  } catch (error) {
+    console.log(error);
+    throw error;
+  }
 }
