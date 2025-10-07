@@ -19,5 +19,5 @@ async function getTxDetails(txHash: string) {
 
 
 
-getTxReceipt("0x810866270eb13f34fb5485a0e2d667b9532d42916b1f4ce331ff5ba2d5c84bb1");
-getTxDetails("0x810866270eb13f34fb5485a0e2d667b9532d42916b1f4ce331ff5ba2d5c84bb1");
+getTxReceipt("0x81a688413993196215cdd863db9e2ead6d6ed5007623868bd811dca9687957a1");
+getTxDetails("0x81a688413993196215cdd863db9e2ead6d6ed5007623868bd811dca9687957a1");

@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    // Output directory for compiled JavaScript files
+    "outDir": "./dist", 
+    // Root directory for your TypeScript source files
+    "rootDir": "./src", 
+    // Target modern JavaScript
+    "target": "ES2020", 
+    // Use modern Node.js module system
+    "module": "CommonJS", 
+    // Enables all strict type-checking options
+    "strict": true, 
+    // Resolve modules using Node's module resolution strategy
+    "moduleResolution": "node", 
+    // Enable support for default and named imports
+    "esModuleInterop": true, 
+    // Allow JavaScript files to be imported
+    "allowJs": true, 
+    // Skip type checking of declaration files
+    "skipLibCheck": true, 
+    // Required for module resolution
+    "forceConsistentCasingInFileNames": true 
+  },
+  "include": [
+    "src/**/*.ts" // Specify files to compile
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

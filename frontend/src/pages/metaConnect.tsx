@@ -7,7 +7,7 @@ import contractArtifact from "../../../smart-contracts/artifacts/contracts/MyCon
 // Replace with your deployed contract address
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 
-function connection() {
+const Metaconnect=()=> {
   const [account, setAccount] = useState<string>();
   const [message, setMessage] = useState<string>();
   const [newMessage, setNewMessage] = useState<string>("");
@@ -82,4 +82,4 @@ function connection() {
   );
 }
 
-export default connection;
+export default Metaconnect;
