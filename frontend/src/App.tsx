@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import WriteOnBlock from './components/writeOnBlock';
 import RegistryUploader from './pages/RegistryUploader';
 import LandingPage from './pages/LandingPage';
@@ -19,6 +19,7 @@ import ShinyText from "./components/ShinyText.tsx";
 
 export function GlobeDemo() {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const handleAnimationComplete = () => {
     console.log('Animation complete');
   };
@@ -453,12 +454,31 @@ export function GlobeDemo() {
             <p className="text-xl md:text-2xl mb-8 max-w-2xl mx-auto">
             A secure, verifiable system that enables organizations to share sensitive files without relying on a central authority and unparalleled security.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <RegisterDialog />
-              <button className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
-                Learn More
-              </button>
-            </div>
+             <div className="flex flex-col sm:flex-row gap-4 justify-center">
+               {user ? (
+                 <>
+                   <button
+                     onClick={() => navigate('/upload')}
+                     className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition"
+                   >
+                     Send
+                   </button>
+                   <button
+                     onClick={() => navigate('/receive')}
+                     className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition"
+                   >
+                     Receive
+                   </button>
+                 </>
+               ) : (
+                 <>
+                   <RegisterDialog />
+                   <button className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
+                     Learn More
+                   </button>
+                 </>
+               )}
+             </div>
           </div>
         </div>
       </div>
