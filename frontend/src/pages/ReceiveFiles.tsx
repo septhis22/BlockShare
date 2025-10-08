@@ -4,7 +4,7 @@ import EthCrypto from "eth-crypto";
 import CryptoJS from "crypto-js";
 import { getRecordFromBlockchain } from "../utils/dataOnChain";
 
-import { Download, Lock, Key, FileText, User, Clock, CheckCircle, AlertCircle, Upload } from "lucide-react";
+import { Download, Lock, Key, FileText, User, Clock, CheckCircle, AlertCircle, Upload, ShieldCheck, ShieldAlert } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 interface SharedFile {
@@ -18,13 +18,22 @@ interface SharedFile {
   };
 }
 
+// NEW interface for hash information state
+interface HashInfo {
+  recordId: string;
+  blockchainHash: string;
+  calculatedHash: string;
+  status: 'verifying' | 'matching' | 'mismatch' | 'idle';
+}
+
 const ReceiveFiles: React.FC = () => {
   const [sharedFiles, setSharedFiles] = useState<SharedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [password, setPassword] = useState<string>("");
   const [decryptedPrivateKey, setDecryptedPrivateKey] = useState<string>("");
-  const [privateKey, setPrivateKey] = useState<string>("");
   const navigate = useNavigate();
+  // NEW state to hold hash verification details for the UI
+  const [hashInfo, setHashInfo] = useState<HashInfo | null>(null);
 
   useEffect(() => {
     fetchSharedFiles();
@@ -54,54 +63,81 @@ const ReceiveFiles: React.FC = () => {
     }
 
     setLoading(true);
+    // 1. Initialize hash info state for the UI
+    setHashInfo({
+      recordId,
+      blockchainHash: "Fetching...",
+      calculatedHash: "Pending...",
+      status: 'verifying'
+    });
+
     try {
-      // Get record from blockchain
+      // 2. Get record from blockchain
       const record = await getRecordFromBlockchain(recordId);
       const { eCID, eDEK, dHash } = record;
+      console.log("Retrieved dHash from blockchain:", dHash);
+      // Update UI with blockchain hash
+      setHashInfo(prev => prev ? { ...prev, blockchainHash: dHash } : null);
 
-      // Decrypt DEK with private key
+      // 3. Decrypt DEK with private key
       const encryptedDekObj = EthCrypto.cipher.parse(eDEK);
       const decryptedDek = await EthCrypto.decryptWithPrivateKey(decryptedPrivateKey, encryptedDekObj);
 
-      // Fetch encrypted file from IPFS
+      // 4. Fetch encrypted file from IPFS
       const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${eCID}`, {
         responseType: 'text'
       });
 
-      // Decrypt file (encrypted data is stored as text)
+      // 5. Decrypt file content
       const encryptedString = response.data;
-      console.log("Encrypted string length:", encryptedString.length);
       const decryptedWordArray = CryptoJS.AES.decrypt(encryptedString, decryptedDek);
-      console.log("Decrypted word array sigBytes:", decryptedWordArray.sigBytes);
 
-      if (decryptedWordArray.sigBytes === 0) {
-        alert("Failed to decrypt file. Check private key.");
+      if (decryptedWordArray.sigBytes <= 0) {
+        alert("Failed to decrypt file. Check your password and private key.");
+        setLoading(false);
+        setHashInfo(null); // Clear hash info on failure
         return;
       }
+      
+      // 6. VERIFICATION: Calculate hash of the decrypted file
+      const calculatedHash = CryptoJS.SHA256(decryptedWordArray).toString();
+      console.log("Calculated hash of decrypted file:", calculatedHash);
 
-      // Convert WordArray to Uint8Array
-      const decryptedBytes = [];
-      for (let i = 0; i < decryptedWordArray.sigBytes; i++) {
-        decryptedBytes.push((decryptedWordArray.words[Math.floor(i / 4)] >>> (24 - (i % 4) * 8)) & 0xff);
+      // 7. Compare hashes
+      if (calculatedHash === dHash) {
+        // Hashes match: File is authentic
+        console.log("✅ Hash verification successful! File is authentic.");
+        setHashInfo(prev => prev ? { ...prev, calculatedHash, status: 'matching' } : null);
+        
+        // 8. Convert WordArray to Uint8Array and create blob for download
+        const decryptedBytes = [];
+        for (let i = 0; i < decryptedWordArray.sigBytes; i++) {
+            decryptedBytes.push((decryptedWordArray.words[Math.floor(i / 4)] >>> (24 - (i % 4) * 8)) & 0xff);
+        }
+        const uint8Array = new Uint8Array(decryptedBytes);
+
+        const blob = new Blob([uint8Array], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName; // Use the original file name
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert("File integrity verified and downloaded successfully!");
+      } else {
+        // Hashes DO NOT match: File may be corrupted or tampered with
+        console.error("❌ HASH MISMATCH! File may be corrupted or tampered with.");
+        setHashInfo(prev => prev ? { ...prev, calculatedHash, status: 'mismatch' } : null);
+        alert("File verification failed! The file's integrity could not be confirmed. Download aborted.");
       }
-      const uint8Array = new Uint8Array(decryptedBytes);
-
-      // Create blob and download
-      const blob = new Blob([uint8Array], { type: 'application/octet-stream' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      alert("File downloaded successfully!");
 
     } catch (error) {
       console.error("Failed to download file:", error);
-      alert("Failed to download file");
+      alert("Failed to download file. An error occurred during the process.");
+      setHashInfo(null); // Clear hash info on error
     } finally {
       setLoading(false);
     }
@@ -188,7 +224,7 @@ const ReceiveFiles: React.FC = () => {
             Receive Secure Files
           </h1>
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            Decrypt and download files shared with you using end-to-end encryption
+            Decrypt and download files shared with you, with integrity verified by the blockchain.
           </p>
         </div>
 
@@ -202,7 +238,7 @@ const ReceiveFiles: React.FC = () => {
               <span>Decrypt Your Private Key</span>
             </h3>
             <p className="text-gray-400 text-sm">
-              Enter your account password to unlock your encryption keys
+              Enter your account password to unlock your encryption keys for file download.
             </p>
           </div>
           <div>
@@ -227,7 +263,7 @@ const ReceiveFiles: React.FC = () => {
             {decryptedPrivateKey && (
               <div className="mt-4 flex items-center space-x-2 text-green-400">
                 <CheckCircle className="w-4 h-4" />
-                <span className="text-sm">Private key decrypted successfully</span>
+                <span className="text-sm">Private key decrypted successfully. You can now download files.</span>
               </div>
             )}
           </div>
@@ -276,20 +312,47 @@ const ReceiveFiles: React.FC = () => {
                         disabled={loading || !decryptedPrivateKey}
                         className="bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 px-6 py-3 rounded-lg font-semibold transition text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                       >
-                        {loading ? (
+                        {loading && hashInfo?.recordId === file.recordId ? (
                           <>
                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                            <span>Downloading...</span>
+                            <span>Verifying...</span>
                           </>
                         ) : (
                           <>
                             <Download className="w-4 h-4" />
-                            <span>Download</span>
+                            <span>Verify & Download</span>
                           </>
                         )}
                       </button>
                     </div>
-                  </div>
+
+                    {/* NEW: Hash Verification Info Box */}
+                    {hashInfo && hashInfo.recordId === file.recordId && (
+                      <div className="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700 transition-all duration-300">
+                        <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                          {hashInfo.status === 'verifying' && <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />}
+                          {hashInfo.status === 'matching' && <ShieldCheck className="w-4 h-4 text-green-400" />}
+                          {hashInfo.status === 'mismatch' && <ShieldAlert className="w-4 h-4 text-red-400" />}
+                          Integrity Verification
+                        </h4>
+                        <div className="space-y-2 text-xs font-mono">
+                          <div className="flex justify-between items-center gap-4">
+                            <span className="text-gray-400 flex-shrink-0">Blockchain Hash:</span>
+                            <code className="text-cyan-400 bg-gray-900 px-2 py-1 rounded truncate min-w-0">{hashInfo.blockchainHash}</code>
+                          </div>
+                          <div className="flex justify-between items-center gap-4">
+                            <span className="text-gray-400 flex-shrink-0">Calculated Hash:</span>
+                            <code className={`bg-gray-900 px-2 py-1 rounded truncate min-w-0 ${
+                              hashInfo.status === 'matching' ? 'text-green-400' : 
+                              hashInfo.status === 'mismatch' ? 'text-red-400' : 'text-yellow-400'
+                            }`}>
+                              {hashInfo.calculatedHash}
+                            </code>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                </div>
               ))}
             </div>
           )}
@@ -300,3 +363,4 @@ const ReceiveFiles: React.FC = () => {
 };
 
 export default ReceiveFiles;
+

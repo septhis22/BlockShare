@@ -179,17 +179,23 @@ export default function FileTransfer() {
 
     for (const selectedFile of selectedFiles) {
       try {
-        // 1️⃣ Encrypt file
+        // 1️⃣ Compute hash of the ORIGINAL, NON-ENCRYPTED data
+        const originalFileArrayBuffer = await selectedFile.file.arrayBuffer();
+        const originalFileWordArray = CryptoJS.lib.WordArray.create(originalFileArrayBuffer as any);
+        const dHash = CryptoJS.SHA256(originalFileWordArray).toString();
+        console.log(`Computed hash for ${selectedFile.name}:`, dHash);
+        
+        // 2️⃣ Encrypt file
         const { encryptedBlob, dek } = await encryptFile(selectedFile.file);
 
-        // 2️⃣ Encrypt DEK with recipient's public key (remove 0x prefix)
+        // 3️⃣ Encrypt DEK with recipient's public key (remove 0x prefix)
         const publicKeyForEncryption = recipientPublicKey.startsWith('0x') ? recipientPublicKey.slice(2) : recipientPublicKey;
         console.log("Encrypting with public key (without 0x):", publicKeyForEncryption);
         const encryptedDek = await EthCrypto.encryptWithPublicKey(publicKeyForEncryption, dek);
         const encryptedDekString = EthCrypto.cipher.stringify(encryptedDek);
         console.log("Encrypted DEK:", encryptedDekString);
 
-        // 3️⃣ Upload to Pinata
+        // 4️⃣ Upload to Pinata
         const response = await uploadToPinata(encryptedBlob, selectedFile.name + ".enc");
         console.log("📦 Pinata response:", response);
 
@@ -212,13 +218,9 @@ export default function FileTransfer() {
 
         console.log("✅ Extracted CID:", eCID);
 
-        // 4️⃣ Compute hash of encrypted data
-        const arrayBuffer = await encryptedBlob.arrayBuffer();
-        const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer as any);
-        const dHash = CryptoJS.SHA256(wordArray).toString();
-
         // 5️⃣ Store on blockchain
         try {
+          // Pass the hash of the original data (dHash) to the blockchain function
           const { recordId, txHash } = await uploadRecordToBlockchain(eCID, encryptedDekString, dHash);
 
           // 6️⃣ Share with recipient via backend
