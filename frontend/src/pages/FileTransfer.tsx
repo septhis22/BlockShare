@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import EthCrypto from 'eth-crypto';
-import { Upload,  Download, LogOut, User, Shield, Zap, Sparkles, Cloud, FileText, X, Lock, Key } from 'lucide-react';
+import { Upload,  Download, LogOut, User, Shield, Zap, Sparkles, Cloud, FileText, X, Lock, Key, Settings } from 'lucide-react';
 import CryptoJS from 'crypto-js';
 import { uploadToPinata } from '../utils/pinataUploads';
 import { uploadRecordToBlockchain } from '../utils/dataOnChain';
 import MetaConnect from "../components/metaConnect";
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+// NEW Import: ProfileSettings component for key management
+import { ProfileSettings } from '../components/profileSetting';
 
 interface UploadResult {
   name: string;
@@ -25,6 +27,13 @@ interface SelectedFile {
   file: File;
 }
 
+// Utility function to generate a cryptographically secure random salt
+const generateSalt = (length: number = 16): string => {
+    const saltBytes = window.crypto.getRandomValues(new Uint8Array(length));
+    return Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+};
+
+
 export default function FileTransfer() {
   const { user, logout, token } = useAuth();
   const navigate = useNavigate();
@@ -37,7 +46,13 @@ export default function FileTransfer() {
   const [isSending, setIsSending] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [isWalletConnected, setIsWalletConnected] = useState(false);
+  
+  // --- NEW STATE FOR PROFILE DROPDOWN/MODAL ---
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [isKeySettingsModalOpen, setIsKeySettingsModalOpen] = useState(false);
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileRef = useRef<HTMLDivElement>(null); // Ref for closing dropdown on outside click
 
   // Floating particles effect
   const [particles, setParticles] = useState<Array<{id: number; x: number; y: number; size: number; delay: number}>>([]);
@@ -52,6 +67,19 @@ export default function FileTransfer() {
     }));
     setParticles(newParticles);
   }, []);
+  
+  // --- EFFECT TO CLOSE DROPDOWN ON OUTSIDE CLICK ---
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileRef.current && !profileRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [profileRef]);
 
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -112,7 +140,8 @@ export default function FileTransfer() {
 
   const handleEncryptAndUpload = async () => {
     if (!user) {
-      alert("Please login first");
+      // Replaced alert
+      console.error("Please login first");
       return;
     }
     if (selectedFiles.length === 0 || !recipientAddress) return;
@@ -134,14 +163,16 @@ export default function FileTransfer() {
 
       // Validate public key format (EthCrypto uncompressed: 128 chars)
       if (recipientPublicKey.length !== 128) {
-        alert(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 128 characters. They may need to re-register.`);
+        // Replaced alert
+        console.error(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 128 characters. They may need to re-register.`);
         setIsSending(false);
         return;
       }
     } catch (err: any) {
       console.error("❌ Failed to get recipient public key:", err);
       const errorMessage = err.response?.data?.message || "Failed to find recipient or get their public key";
-      alert(errorMessage);
+      // Replaced alert
+      console.error(errorMessage);
       setIsSending(false);
       return;
     }
@@ -260,12 +291,38 @@ export default function FileTransfer() {
     console.log("Wallet connected:", account);
     setIsWalletConnected(true);
   };
+  
+  // Function to open the Key Settings modal
+  const openKeySettings = () => {
+      setIsProfileMenuOpen(false); // Close the dropdown
+      setIsKeySettingsModalOpen(true); // Open the modal
+  };
+  
+  // Function to log out and handle menu closure
+  const handleLogout = () => {
+    setIsProfileMenuOpen(false);
+    logout();
+  };
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
+      {/* Key Settings Modal/Overlay */}
+      {isKeySettingsModalOpen && (
+          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="relative w-full max-w-lg bg-zinc-900 rounded-xl shadow-2xl p-6 border border-zinc-700/50">
+                  <button 
+                      onClick={() => setIsKeySettingsModalOpen(false)}
+                      className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/50 text-white hover:bg-zinc-700 transition"
+                  >
+                      <X size={20} />
+                  </button>
+                  <ProfileSettings />
+              </div>
+          </div>
+      )}
+      
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Blue glowing orbs */}
         <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/3 right-1/3 w-80 h-80 bg-blue-400/5 rounded-full blur-3xl animate-pulse" style={{animationDelay: '2s'}} />
         <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-cyan-500/5 rounded-full blur-2xl animate-pulse" style={{animationDelay: '4s'}} />
@@ -341,27 +398,54 @@ export default function FileTransfer() {
 
             <div className="flex items-center space-x-3">
               <MetaConnect onConnected={handleWalletConnected} />
-               <div className="flex items-center space-x-3 bg-gray-900/60 px-4 py-2 rounded-xl shadow-xl border border-gray-800 backdrop-blur-sm hover:bg-gray-800/60 transition-all duration-300 group">
-                 <div className="relative">
-                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg">
-                     <User className="w-4 h-4 text-white" />
+               
+              {/* --- EDITED: Profile Dropdown Menu --- */}
+              <div className="relative" ref={profileRef}>
+                 <button
+                   onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                   className="flex items-center space-x-3 bg-gray-900/60 px-4 py-2 rounded-xl shadow-xl border border-gray-800 backdrop-blur-sm hover:bg-gray-800/60 transition-all duration-300 group focus:outline-none"
+                   aria-expanded={isProfileMenuOpen}
+                 >
+                   <div className="relative">
+                     <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-full flex items-center justify-center shadow-lg">
+                       <User className="w-4 h-4 text-white" />
+                     </div>
                    </div>
-                 </div>
-                 <div>
-                   <span className="font-semibold text-white text-sm">{user?.name || 'User'}</span>
-                   <div className="flex items-center space-x-1">
-                     <Shield className="w-3 h-3 text-green-400" />
-                     <span className="text-xs text-green-400">Verified</span>
+                   <div className='text-left hidden sm:block'>
+                     <span className="font-semibold text-white text-sm">{user?.name || 'User'}</span>
+                     <div className="flex items-center space-x-1">
+                       <Shield className="w-3 h-3 text-green-400" />
+                       <span className="text-xs text-green-400">Verified</span>
+                     </div>
                    </div>
-                 </div>
-               </div>
-               <button
-                 onClick={logout}
-                 className="flex items-center space-x-2 px-3 py-2.5 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500/20 transition-all duration-300 border border-red-500/20 hover:border-red-500/40 hover:shadow-lg group"
-               >
-                 <LogOut className="w-4 h-4 group-hover:scale-110 transition-transform" />
-                 <span className="font-semibold text-sm">Logout</span>
-               </button>
+                 </button>
+                 
+                 {isProfileMenuOpen && (
+                    <div className="absolute right-0 mt-2 w-56 origin-top-right bg-zinc-800/95 backdrop-blur-md border border-zinc-700 rounded-xl shadow-2xl p-1 z-50 animate-fade-in">
+                        <div className="py-1">
+                            {/* Key Settings Option */}
+                            <button
+                                onClick={openKeySettings}
+                                className="w-full text-left flex items-center space-x-3 px-4 py-2 text-sm text-white rounded-lg hover:bg-zinc-700/50 transition-colors duration-200"
+                            >
+                                <Key className="w-4 h-4 text-red-400" />
+                                <span>Key Revocation Settings</span>
+                            </button>
+
+                            {/* Logout Option */}
+                            <button
+                                onClick={handleLogout}
+                                className="w-full text-left flex items-center space-x-3 px-4 py-2 text-sm text-red-400 rounded-lg hover:bg-red-500/10 transition-colors duration-200 mt-1 border-t border-zinc-700/50 pt-2"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                <span>Logout</span>
+                            </button>
+                        </div>
+                    </div>
+                 )}
+              </div>
+              {/* --- END Profile Dropdown Menu --- */}
+
             </div>
           </div>
         </div>
@@ -650,6 +734,15 @@ export default function FileTransfer() {
       </main>
 
       <style>{`
+        @keyframes fade-in {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+
+        .animate-fade-in {
+          animation: fade-in 0.2s ease-out forwards;
+        }
+        
         @keyframes float-in {
           from {
             opacity: 0;

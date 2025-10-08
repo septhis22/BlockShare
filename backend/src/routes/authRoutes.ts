@@ -1,13 +1,22 @@
-import express from 'express';
-import { signup, login, getProfile, getUserByEmail } from '../controllers/authcontroller';
-import { validateSignup, validateLogin } from '../middlewares/validation';
-import { authenticateToken } from '../middlewares/auth';
+import { Router } from 'express';
+import { 
+  signup, 
+  login, 
+  getProfile, 
+  getUserByEmail, 
+  revokeAndRegenerateKeys 
+} from '../controllers/authcontroller';
+import { authenticateToken } from '../middlewares/auth'; // Import your real middleware
 
-const router = express.Router();
+const router = Router();
 
-router.post('/signup', validateSignup, signup);
-router.post('/login', validateLogin, login);
+// Public routes
+router.post('/signup', signup);
+router.post('/login', login);
+
+// Protected routes - using REAL authenticateToken middleware
 router.get('/profile', authenticateToken, getProfile);
 router.get('/user', authenticateToken, getUserByEmail);
+router.post('/regenerate-keys', authenticateToken, revokeAndRegenerateKeys);
 
 export default router;

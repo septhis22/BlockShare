@@ -31,8 +31,7 @@ const signupSchema = z.object({
   encrypted_private_key: z.string()
     .min(1, 'Encrypted private key is required')
     .trim(),
-  // --- EDITED: Add salt field validation ---
-  salt: z.string()
+  salt: z.string() // <-- FIX: Added salt to signup schema
     .min(1, 'Salt is required')
     .trim()
 });
@@ -44,6 +43,14 @@ const loginSchema = z.object({
     .trim(),
   password: z.string()
     .min(1, 'Password is required')
+});
+
+// Schema for key regeneration request
+const regenerateSchema = z.object({
+    password: z.string().min(1, 'Password is required'),
+    new_public_key: z.string().min(10, 'New public key is required').trim(),
+    new_encrypted_private_key: z.string().min(1, 'New encrypted private key is required').trim(),
+    new_salt: z.string().min(1, 'New salt is required').trim(),
 });
 
 // Generate JWT Token
@@ -93,7 +100,6 @@ export const signup = [
   validateRequest(signupSchema),
   async (req: Request<{}, {}, SignupRequest & { salt: string }>, res: Response<AuthResponse>) => {
     try {
-      // --- EDITED: Destructure salt from the request body ---
       const { name, email, password, public_key, encrypted_private_key, salt } = req.body;
 
       // Check if user already exists
@@ -105,7 +111,7 @@ export const signup = [
         });
       }
 
-      // Hash password (for user authentication)
+      // Hash password
       const saltRounds = 12;
       const hashedPassword = await bcrypt.hash(password, saltRounds);
 
@@ -116,7 +122,7 @@ export const signup = [
         password: hashedPassword,
         public_key: public_key.trim(),
         encrypted_private_key: encrypted_private_key.trim(),
-        salt: salt.trim() // --- EDITED: Store the salt ---
+        salt: salt.trim() // <-- FIX: Save the salt during signup
       });
 
       await newUser.save();
@@ -191,6 +197,83 @@ export const login = [
   }
 ];
 
+export const revokeAndRegenerateKeys = [
+    validateRequest(regenerateSchema),
+    async (req: Request, res: Response) => {
+        try {
+            // Get user ID from authenticated middleware (set by authenticateToken)
+            const userPayload = req.user as JwtPayload;
+            
+            if (!userPayload || !userPayload.userId) {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: 'User not authenticated' 
+                });
+            }
+
+            const { 
+                password, 
+                new_public_key, 
+                new_encrypted_private_key, 
+                new_salt 
+            } = req.body;
+
+            // 1. Find the user and explicitly select the password hash
+            const user = await User.findById(userPayload.userId).select('+password');
+            
+            if (!user) {
+                return res.status(404).json({ 
+                    success: false, 
+                    message: 'User not found' 
+                });
+            }
+
+            // 2. Verify current password
+            if (!user.password) {
+                return res.status(500).json({ 
+                    success: false, 
+                    message: 'Password hash missing from user record.' 
+                });
+            }
+            
+            const isPasswordValid = await bcrypt.compare(password, user.password);
+            
+            if (!isPasswordValid) {
+                return res.status(401).json({ 
+                    success: false, 
+                    message: 'Incorrect current password provided' 
+                });
+            }
+
+            // 3. Update keys and salt
+            user.public_key = new_public_key.trim();
+            user.encrypted_private_key = new_encrypted_private_key.trim();
+            user.salt = new_salt.trim();
+            
+            await user.save();
+
+            // 4. Return success response
+            res.status(200).json({
+                success: true,
+                message: 'Key pair successfully revoked and regenerated.',
+                data: {
+                    user: userToResponse(user),
+                    new_public_key: user.public_key, 
+                    new_salt: user.salt
+                }
+            });
+
+        } catch (error) {
+            console.error('Key regeneration error:', error);
+            
+            res.status(500).json({ 
+                success: false, 
+                message: 'Internal server error during key regeneration'
+            });
+        }
+    }
+];
+
 export const getProfile = async (req: Request, res: Response) => {
   try {
     const userPayload = req.user as JwtPayload;
@@ -201,6 +284,7 @@ export const getProfile = async (req: Request, res: Response) => {
       });
     }
 
+    // Find the user
     const user = await User.findById(userPayload.userId);
     
     if (!user) {
@@ -210,6 +294,7 @@ export const getProfile = async (req: Request, res: Response) => {
       });
     }
 
+    // Return the response, including the salt
     res.status(200).json({
       success: true,
       message: 'Profile retrieved successfully',
@@ -217,8 +302,7 @@ export const getProfile = async (req: Request, res: Response) => {
         user: {
           ...userToResponse(user),
           encrypted_private_key: user.encrypted_private_key,
-          // --- EDITED: Include salt in profile response for client-side decryption ---
-          salt: user.salt
+          salt: user.salt // <-- FIX: Return the salt to the client
         }
       }
     });

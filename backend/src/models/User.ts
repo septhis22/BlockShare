@@ -7,8 +7,7 @@ export interface IUser extends Document {
   password: string;
   public_key: string;
   encrypted_private_key: string;
-  // --- NEW: Salt field ---
-  salt: string; 
+  salt: string; // <-- CRITICAL FIX: Added salt to interface
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,11 +29,12 @@ const userSchema = new Schema<IUser>(
       lowercase: true,
       match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please enter a valid email"]
     },
-    password: { 
-      type: String, 
-      required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters"]
-    },
+    password: {
+    type: String,
+    required: [true, "Password is required"],
+    minlength: [6, "Password must be at least 6 characters"],
+    select: false  // <-- ADD THIS LINE
+  },
     public_key: {
       type: String,
       required: [true, "Public key is required"],
@@ -45,8 +45,7 @@ const userSchema = new Schema<IUser>(
       required: [true, "Encrypted private key is required"],
       trim: true
     },
-    // --- NEW: Store the unique salt for key derivation ---
-    salt: {
+    salt: { // <-- CRITICAL FIX: Added salt to schema definition
       type: String,
       required: [true, "Salt is required"],
       trim: true
