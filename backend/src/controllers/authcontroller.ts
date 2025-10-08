@@ -156,8 +156,8 @@ export const login = [
     try {
       const { email, password } = req.body;
 
-      // Find user by email
-      const user = await User.findOne({ email: email.toLowerCase() });
+      // Find user by email and include the password field
+      const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
       if (!user) {
         return res.status(401).json({
           success: false,
@@ -186,7 +186,6 @@ export const login = [
           token
         }
       });
-
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({

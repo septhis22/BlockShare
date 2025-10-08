@@ -18,7 +18,6 @@ interface SharedFile {
   };
 }
 
-// NEW interface for hash information state
 interface HashInfo {
   recordId: string;
   blockchainHash: string;
@@ -32,7 +31,6 @@ const ReceiveFiles: React.FC = () => {
   const [password, setPassword] = useState<string>("");
   const [decryptedPrivateKey, setDecryptedPrivateKey] = useState<string>("");
   const navigate = useNavigate();
-  // NEW state to hold hash verification details for the UI
   const [hashInfo, setHashInfo] = useState<HashInfo | null>(null);
 
   useEffect(() => {
@@ -63,7 +61,6 @@ const ReceiveFiles: React.FC = () => {
     }
 
     setLoading(true);
-    // 1. Initialize hash info state for the UI
     setHashInfo({
       recordId,
       blockchainHash: "Fetching...",
@@ -72,72 +69,109 @@ const ReceiveFiles: React.FC = () => {
     });
 
     try {
-      // 2. Get record from blockchain
+      // 1. Get record from blockchain
+      console.log("Fetching record from blockchain for recordId:", recordId);
       const record = await getRecordFromBlockchain(recordId);
       const { eCID, eDEK, dHash } = record;
-      console.log("Retrieved dHash from blockchain:", dHash);
-      // Update UI with blockchain hash
+      console.log("Retrieved record:", { eCID, eDEK: eDEK.substring(0, 50) + "...", dHash });
+      
       setHashInfo(prev => prev ? { ...prev, blockchainHash: dHash } : null);
 
-      // 3. Decrypt DEK with private key
+      // 2. Decrypt DEK with private key
+      console.log("Decrypting DEK...");
       const encryptedDekObj = EthCrypto.cipher.parse(eDEK);
       const decryptedDek = await EthCrypto.decryptWithPrivateKey(decryptedPrivateKey, encryptedDekObj);
+      console.log("DEK decrypted successfully");
 
-      // 4. Fetch encrypted file from IPFS
+      // 3. Fetch encrypted file from IPFS
+      console.log("Fetching encrypted file from IPFS:", eCID);
       const response = await axios.get(`https://gateway.pinata.cloud/ipfs/${eCID}`, {
         responseType: 'text'
       });
+      console.log("File fetched from IPFS, length:", response.data.length);
 
-      // 5. Decrypt file content
+      // 4. Decrypt file content
+      console.log("Decrypting file content...");
       const encryptedString = response.data;
       const decryptedWordArray = CryptoJS.AES.decrypt(encryptedString, decryptedDek);
 
       if (decryptedWordArray.sigBytes <= 0) {
-        alert("Failed to decrypt file. Check your password and private key.");
+        console.error("Decryption failed - sigBytes:", decryptedWordArray.sigBytes);
+        alert("Failed to decrypt file. The file may be corrupted or the keys may be incorrect.");
         setLoading(false);
-        setHashInfo(null); // Clear hash info on failure
+        setHashInfo(null);
         return;
       }
       
-      // 6. VERIFICATION: Calculate hash of the decrypted file
-      const calculatedHash = CryptoJS.SHA256(decryptedWordArray).toString();
-      console.log("Calculated hash of decrypted file:", calculatedHash);
+      console.log("File decrypted successfully, sigBytes:", decryptedWordArray.sigBytes);
 
-      // 7. Compare hashes
+      // 5. Calculate hash of the decrypted content for verification
+      const calculatedHash = CryptoJS.SHA256(decryptedWordArray).toString();
+      console.log("Calculated hash:", calculatedHash);
+      console.log("Blockchain hash:", dHash);
+
+      // 6. Compare hashes
       if (calculatedHash === dHash) {
-        // Hashes match: File is authentic
         console.log("✅ Hash verification successful! File is authentic.");
         setHashInfo(prev => prev ? { ...prev, calculatedHash, status: 'matching' } : null);
         
-        // 8. Convert WordArray to Uint8Array and create blob for download
-        const decryptedBytes = [];
-        for (let i = 0; i < decryptedWordArray.sigBytes; i++) {
-            decryptedBytes.push((decryptedWordArray.words[Math.floor(i / 4)] >>> (24 - (i % 4) * 8)) & 0xff);
+        // 7. Convert WordArray to Uint8Array properly
+        console.log("Converting to bytes for download...");
+        const words = decryptedWordArray.words;
+        const sigBytes = decryptedWordArray.sigBytes;
+        const uint8Array = new Uint8Array(sigBytes);
+        
+        for (let i = 0; i < sigBytes; i++) {
+          const wordIndex = Math.floor(i / 4);
+          const byteIndex = i % 4;
+          uint8Array[i] = (words[wordIndex] >>> (24 - byteIndex * 8)) & 0xff;
         }
-        const uint8Array = new Uint8Array(decryptedBytes);
 
+        console.log("Converted to Uint8Array, length:", uint8Array.length);
+
+        // 8. Create blob and download
         const blob = new Blob([uint8Array], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = fileName; // Use the original file name
+        a.download = fileName;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
+        console.log("File downloaded successfully");
         alert("File integrity verified and downloaded successfully!");
       } else {
-        // Hashes DO NOT match: File may be corrupted or tampered with
-        console.error("❌ HASH MISMATCH! File may be corrupted or tampered with.");
+        console.error("❌ HASH MISMATCH!");
+        console.error("Expected:", dHash);
+        console.error("Got:", calculatedHash);
         setHashInfo(prev => prev ? { ...prev, calculatedHash, status: 'mismatch' } : null);
         alert("File verification failed! The file's integrity could not be confirmed. Download aborted.");
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to download file:", error);
-      alert("Failed to download file. An error occurred during the process.");
-      setHashInfo(null); // Clear hash info on error
+      console.error("Error details:", {
+        message: error.message,
+        response: error.response?.data,
+        stack: error.stack
+      });
+      
+      // Provide more specific error messages
+      let errorMessage = "Failed to download file. ";
+      if (error.message?.includes("decrypt")) {
+        errorMessage += "Decryption failed - please check your private key.";
+      } else if (error.message?.includes("IPFS") || error.response?.status === 404) {
+        errorMessage += "File not found on IPFS.";
+      } else if (error.message?.includes("blockchain")) {
+        errorMessage += "Could not retrieve record from blockchain.";
+      } else {
+        errorMessage += "An error occurred: " + error.message;
+      }
+      
+      alert(errorMessage);
+      setHashInfo(null);
     } finally {
       setLoading(false);
     }
@@ -153,17 +187,43 @@ const ReceiveFiles: React.FC = () => {
       const response = await axios.get("http://localhost:5000/api/auth/profile", {
         headers: { Authorization: `Bearer ${token}` }
       });
-      const encryptedPrivKey = response.data.data.user.encrypted_private_key;
-      const decrypted = CryptoJS.AES.decrypt(encryptedPrivKey, password).toString(CryptoJS.enc.Utf8);
-      if (!decrypted) {
-        alert("Wrong password");
+      const { encrypted_private_key: encryptedPrivKey, salt } = response.data.data.user;
+
+      if (!salt) {
+        alert("Could not retrieve the required salt for decryption. Please contact support.");
         return;
       }
+
+      console.log("Decrypting private key with salt:", salt.substring(0, 10) + "...");
+
+      // Parse the salt from hex string to WordArray
+      const saltWordArray = CryptoJS.enc.Hex.parse(salt);
+
+      // Derive the key using PBKDF2 (must match the encryption process)
+      const key = CryptoJS.PBKDF2(password, saltWordArray, {
+        keySize: 256 / 32,
+        iterations: 1000
+      });
+
+      // Decrypt the private key
+      const decrypted = CryptoJS.AES.decrypt(encryptedPrivKey, key, {
+        iv: saltWordArray,
+        padding: CryptoJS.pad.Pkcs7,
+        mode: CryptoJS.mode.CBC
+      }).toString(CryptoJS.enc.Utf8);
+
+      if (!decrypted || decrypted.length === 0) {
+        console.error("Decryption resulted in empty string");
+        alert("Wrong password or decryption failed.");
+        return;
+      }
+
+      console.log("Private key decrypted successfully, length:", decrypted.length);
       setDecryptedPrivateKey(decrypted);
       alert("Private key decrypted successfully");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to decrypt private key:", error);
-      alert("Failed to decrypt private key");
+      alert("Failed to decrypt private key: " + error.message);
     }
   };
 
@@ -326,7 +386,7 @@ const ReceiveFiles: React.FC = () => {
                       </button>
                     </div>
 
-                    {/* NEW: Hash Verification Info Box */}
+                    {/* Hash Verification Info Box */}
                     {hashInfo && hashInfo.recordId === file.recordId && (
                       <div className="mt-4 p-4 bg-gray-800/50 rounded-lg border border-gray-700 transition-all duration-300">
                         <h4 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
@@ -363,4 +423,3 @@ const ReceiveFiles: React.FC = () => {
 };
 
 export default ReceiveFiles;
-

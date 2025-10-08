@@ -12,11 +12,9 @@ import { useAuth } from "../../context/AuthContext";
 import EthCrypto from 'eth-crypto';
 import CryptoJS from 'crypto-js';
 
-// Function to generate a cryptographically secure random salt (e.g., 16 bytes)
+// Function to generate a cryptographically secure random salt (16 bytes = 32 hex chars)
 const generateSalt = (length: number = 16): string => {
-    // Uses the browser's crypto API for secure random generation
     const saltBytes = window.crypto.getRandomValues(new Uint8Array(length));
-    // Convert the Uint8Array to a hex string for storage/transfer
     return Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
 };
 
@@ -27,13 +25,8 @@ export function RegisterDialog() {
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
 
-  // IMPORTANT: We should ideally use a slow KDF like PBKDF2 here, 
-  // but for simplicity in this frontend component, we keep the existing CryptoJS.AES.encrypt.
-  // In a real app, the KDF should run before the encryption.
-
   const handleRegister = async () => {
     if (!name || !email || !password) {
-      // Replaced alert with console.error as per instructions/best practice
       console.error("All fields are required");
       return;
     }
@@ -42,21 +35,29 @@ export function RegisterDialog() {
     const identity = EthCrypto.createIdentity();
     console.log("Generated identity:", identity);
     
-    // --- STEP 1: GENERATE SALT ---
+    // STEP 1: Generate random salt
     const salt = generateSalt();
     console.log("Generated salt:", salt);
 
-    // --- STEP 2: ENCRYPT PRIVATE KEY ---
-    // Note: CryptoJS AES uses PBKDF2 internally, but the salt generated here
-    // is often used externally if you were handling the KDF manually.
-    // For this demonstration, we are passing the salt separately to be stored 
-    // in the database alongside the resulting encrypted key.
-    const encryptedPrivKey = CryptoJS.AES.encrypt(identity.privateKey, password).toString();
-    console.log("Registering with public key:", identity.publicKey, "Encrypted private key length:", encryptedPrivKey.length);
+    // STEP 2: Derive encryption key from password using PBKDF2
+    const saltWordArray = CryptoJS.enc.Hex.parse(salt);
+    const key = CryptoJS.PBKDF2(password, saltWordArray, {
+        keySize: 256 / 32,  // 256 bits = 32 bytes = 8 words
+        iterations: 1000
+    });
+
+    // STEP 3: Encrypt private key using the derived key and salt as IV
+    const encryptedPrivKey = CryptoJS.AES.encrypt(identity.privateKey, key, {
+        iv: saltWordArray,
+        padding: CryptoJS.pad.Pkcs7,
+        mode: CryptoJS.mode.CBC
+    }).toString();
+
+    console.log("Registering with public key:", identity.publicKey);
+    console.log("Encrypted private key length:", encryptedPrivKey.length);
 
     setLoading(true);
     try {
-      // --- STEP 3: PASS SALT TO REGISTER FUNCTION ---
       await register(name, email, password, identity.publicKey, encryptedPrivKey, salt);
       setName("");
       setEmail("");
@@ -64,7 +65,6 @@ export function RegisterDialog() {
     } catch (error: unknown) {
       console.error("Registration failed:", error);
       const errorMessage = (error as any)?.response?.data?.error || "Registration failed";
-      // Replaced alert with console.error as per instructions/best practice
       console.error(errorMessage);
     } finally {
       setLoading(false);
