@@ -3,7 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getUserByEmail = exports.getProfile = exports.login = exports.signup = exports.validateRequest = void 0;
+exports.getUserByEmail = exports.getProfile = exports.rotateKeyPhrase = exports.registerEncryptionKey = exports.getKeyPhrase = exports.revokeAndRegenerateKeys = exports.login = exports.signup = exports.validateRequest = void 0;
+const crypto_1 = require("crypto");
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = require("jsonwebtoken");
 const zod_1 = require("zod");
@@ -21,12 +22,8 @@ const signupSchema = zod_1.z.object({
     password: zod_1.z.string()
         .min(6, 'Password must be at least 6 characters long')
         .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/, 'Password must contain at least one lowercase letter, one uppercase letter, and one number'),
-    public_key: zod_1.z.string()
-        .min(10, 'Public key must be at least 10 characters long')
-        .trim(),
-    encrypted_private_key: zod_1.z.string()
-        .min(1, 'Encrypted private key is required')
-        .trim()
+    wallet_address: zod_1.z.string()
+        .regex(/^0x[0-9a-fA-F]{40}$/, 'A valid MetaMask wallet address is required')
 });
 const loginSchema = zod_1.z.object({
     email: zod_1.z.string()
@@ -36,10 +33,27 @@ const loginSchema = zod_1.z.object({
     password: zod_1.z.string()
         .min(1, 'Password is required')
 });
+// Schema for key regeneration request
+const regenerateSchema = zod_1.z.object({
+    password: zod_1.z.string().min(1, 'Password is required'),
+    new_public_key: zod_1.z.string().min(10, 'New public key is required').trim(),
+    new_encrypted_private_key: zod_1.z.string().min(1, 'New encrypted private key is required').trim(),
+    new_salt: zod_1.z.string().min(1, 'New salt is required').trim(),
+});
+const encryptionKeySchema = zod_1.z.object({
+    public_key: zod_1.z.string().regex(/^[0-9a-fA-F]{128}$/, 'A 128-character uncompressed public key is required'),
+    wallet_address: zod_1.z.string().regex(/^0x[0-9a-fA-F]{40}$/, 'A valid wallet address is required')
+});
+const rotatePhraseSchema = zod_1.z.object({
+    password: zod_1.z.string().min(1, 'Password is required')
+});
 // Generate JWT Token
 const generateToken = (userId, email) => {
     const secret = process.env.JWT_SECRET;
-    return (0, jsonwebtoken_1.sign)({ userId, email }, secret);
+    if (!secret)
+        throw new Error('JWT_SECRET is not configured');
+    const options = { expiresIn: '24h' };
+    return (0, jsonwebtoken_1.sign)({ userId, email }, secret, options);
 };
 // Convert user document to response object
 const userToResponse = (user) => {
@@ -48,7 +62,7 @@ const userToResponse = (user) => {
         _id: user._id,
         name: user.name,
         email: user.email,
-        public_key: user.public_key,
+        public_key: user.public_key || '',
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
     };
@@ -81,7 +95,7 @@ exports.signup = [
     (0, exports.validateRequest)(signupSchema),
     async (req, res) => {
         try {
-            const { name, email, password, public_key, encrypted_private_key } = req.body;
+            const { name, email, password, wallet_address } = req.body;
             // Check if user already exists
             const existingUser = await User_1.default.findOne({ email: email.toLowerCase() });
             if (existingUser) {
@@ -98,8 +112,8 @@ exports.signup = [
                 name: name.trim(),
                 email: email.toLowerCase().trim(),
                 password: hashedPassword,
-                public_key: public_key.trim(),
-                encrypted_private_key: encrypted_private_key.trim()
+                wallet_address: wallet_address.toLowerCase(),
+                key_phrase: (0, crypto_1.randomBytes)(32).toString('hex')
             });
             await newUser.save();
             // Generate JWT token
@@ -115,6 +129,12 @@ exports.signup = [
             });
         }
         catch (error) {
+            if (error.code === 11000) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'User already exists with this email'
+                });
+            }
             console.error('Signup error:', error);
             res.status(500).json({
                 success: false,
@@ -128,8 +148,8 @@ exports.login = [
     async (req, res) => {
         try {
             const { email, password } = req.body;
-            // Find user by email
-            const user = await User_1.default.findOne({ email: email.toLowerCase() });
+            // Find user by email and include the password field
+            const user = await User_1.default.findOne({ email: email.toLowerCase() }).select('+password');
             if (!user) {
                 return res.status(401).json({
                     success: false,
@@ -165,6 +185,163 @@ exports.login = [
         }
     }
 ];
+exports.revokeAndRegenerateKeys = [
+    (0, exports.validateRequest)(regenerateSchema),
+    async (req, res) => {
+        try {
+            // Get user ID from authenticated middleware (set by authenticateToken)
+            const userPayload = req.user;
+            if (!userPayload || !userPayload.userId) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'User not authenticated'
+                });
+            }
+            const { password, new_public_key, new_encrypted_private_key, new_salt } = req.body;
+            // 1. Find the user and explicitly select the password hash
+            const user = await User_1.default.findById(userPayload.userId).select('+password');
+            if (!user) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'User not found'
+                });
+            }
+            // 2. Verify current password
+            if (!user.password) {
+                return res.status(500).json({
+                    success: false,
+                    message: 'Password hash missing from user record.'
+                });
+            }
+            const isPasswordValid = await bcryptjs_1.default.compare(password, user.password);
+            if (!isPasswordValid) {
+                return res.status(401).json({
+                    success: false,
+                    message: 'Incorrect current password provided'
+                });
+            }
+            // 3. Update keys and salt
+            user.public_key = new_public_key.trim();
+            user.encrypted_private_key = new_encrypted_private_key.trim();
+            user.salt = new_salt.trim();
+            await user.save();
+            // 4. Return success response
+            res.status(200).json({
+                success: true,
+                message: 'Key pair successfully revoked and regenerated.',
+                data: {
+                    user: userToResponse(user),
+                    new_public_key: user.public_key,
+                    new_salt: user.salt
+                }
+            });
+        }
+        catch (error) {
+            console.error('Key regeneration error:', error);
+            res.status(500).json({
+                success: false,
+                message: 'Internal server error during key regeneration'
+            });
+        }
+    }
+];
+const getKeyPhrase = async (req, res) => {
+    try {
+        const userPayload = req.user;
+        if (!userPayload?.userId) {
+            return res.status(401).json({ success: false, message: 'User not authenticated' });
+        }
+        const user = await User_1.default.findById(userPayload.userId).select('+key_phrase');
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        if (!user.key_phrase) {
+            user.key_phrase = (0, crypto_1.randomBytes)(32).toString('hex');
+            await user.save();
+        }
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+        res.set('Pragma', 'no-cache');
+        res.status(200).json({
+            success: true,
+            data: { key_phrase: user.key_phrase }
+        });
+    }
+    catch (error) {
+        console.error('Get key phrase error:', error);
+        res.status(500).json({ success: false, message: 'Failed to retrieve key phrase' });
+    }
+};
+exports.getKeyPhrase = getKeyPhrase;
+exports.registerEncryptionKey = [
+    (0, exports.validateRequest)(encryptionKeySchema),
+    async (req, res) => {
+        try {
+            const userPayload = req.user;
+            if (!userPayload?.userId) {
+                return res.status(401).json({ success: false, message: 'User not authenticated' });
+            }
+            const { public_key, wallet_address } = req.body;
+            const user = await User_1.default.findById(userPayload.userId);
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found' });
+            }
+            const normalizedAddress = wallet_address.toLowerCase();
+            if (user.wallet_address && user.wallet_address !== normalizedAddress) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'A different wallet is already linked. Rotate the key phrase before changing wallets.'
+                });
+            }
+            if (user.public_key && user.public_key.toLowerCase() !== public_key.toLowerCase()) {
+                return res.status(409).json({
+                    success: false,
+                    message: 'The derived key does not match the registered key. Check MetaMask and sign the same phrase, or rotate the key phrase.'
+                });
+            }
+            user.wallet_address = normalizedAddress;
+            user.public_key = public_key.toLowerCase();
+            await user.save();
+            res.status(200).json({
+                success: true,
+                data: { public_key: user.public_key, wallet_address: user.wallet_address }
+            });
+        }
+        catch (error) {
+            console.error('Register encryption key error:', error);
+            res.status(500).json({ success: false, message: 'Failed to register encryption key' });
+        }
+    }
+];
+exports.rotateKeyPhrase = [
+    (0, exports.validateRequest)(rotatePhraseSchema),
+    async (req, res) => {
+        try {
+            const userPayload = req.user;
+            if (!userPayload?.userId) {
+                return res.status(401).json({ success: false, message: 'User not authenticated' });
+            }
+            const user = await User_1.default.findById(userPayload.userId).select('+password +key_phrase');
+            if (!user) {
+                return res.status(404).json({ success: false, message: 'User not found' });
+            }
+            if (!user.password || !(await bcryptjs_1.default.compare(req.body.password, user.password))) {
+                return res.status(401).json({ success: false, message: 'Incorrect current password' });
+            }
+            user.key_phrase = (0, crypto_1.randomBytes)(32).toString('hex');
+            user.wallet_address = undefined;
+            user.public_key = undefined;
+            await user.save();
+            res.status(200).json({
+                success: true,
+                message: 'Key phrase rotated. Sign in with MetaMask to register the new encryption key.'
+            });
+        }
+        catch (error) {
+            console.error('Rotate key phrase error:', error);
+            res.status(500).json({ success: false, message: 'Failed to rotate key phrase' });
+        }
+    }
+];
 const getProfile = async (req, res) => {
     try {
         const userPayload = req.user;
@@ -174,6 +351,7 @@ const getProfile = async (req, res) => {
                 message: 'User not authenticated'
             });
         }
+        // Find the user
         const user = await User_1.default.findById(userPayload.userId);
         if (!user) {
             return res.status(404).json({
@@ -181,13 +359,15 @@ const getProfile = async (req, res) => {
                 message: 'User not found'
             });
         }
+        // Return the response, including the salt
         res.status(200).json({
             success: true,
             message: 'Profile retrieved successfully',
             data: {
                 user: {
                     ...userToResponse(user),
-                    encrypted_private_key: user.encrypted_private_key
+                    encrypted_private_key: user.encrypted_private_key,
+                    salt: user.salt // <-- FIX: Return the salt to the client
                 }
             }
         });
@@ -224,6 +404,12 @@ const getUserByEmail = async (req, res) => {
                 message: 'User not found'
             });
         }
+        if (!user.public_key) {
+            return res.status(409).json({
+                success: false,
+                message: 'This user has not connected MetaMask and activated file encryption yet.'
+            });
+        }
         res.status(200).json({
             success: true,
             message: 'User retrieved successfully',
@@ -232,7 +418,8 @@ const getUserByEmail = async (req, res) => {
                     id: user._id.toString(),
                     name: user.name,
                     email: user.email,
-                    public_key: user.public_key
+                    public_key: user.public_key,
+                    wallet_address: user.wallet_address
                 }
             }
         });

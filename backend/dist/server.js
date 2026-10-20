@@ -13,7 +13,8 @@ dotenv_1.default.config();
 const app = (0, express_1.default)();
 app.use((0, cors_1.default)({
     origin: 'http://localhost:5173',
-    credentials: true
+    credentials: true,
+    exposedHeaders: ['X-Encrypted-Aes-Key', 'X-Original-File-Name']
 }));
 app.use(express_1.default.json());
 // Auth routes
@@ -26,6 +27,9 @@ app.get('/', (req, res) => {
 });
 const startServer = async () => {
     try {
+        if (!process.env.JWT_SECRET) {
+            throw new Error('JWT_SECRET must be configured before starting the API');
+        }
         await (0, db_1.default)();
         const PORT = process.env.PORT || 5000;
         app.listen(PORT, () => {

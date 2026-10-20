@@ -11,7 +11,8 @@ const app = express();
 
 app.use(cors({
   origin: 'http://localhost:5173',
-  credentials: true
+  credentials: true,
+  exposedHeaders: ['X-Encrypted-Aes-Key', 'X-Original-File-Name']
 }));
 app.use(express.json());
 
@@ -28,6 +29,10 @@ app.get('/', (req: Request, res: Response) => {
 
 const startServer = async (): Promise<void> => {
   try {
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET must be configured before starting the API');
+    }
+
     await connectDB();
     
     const PORT = process.env.PORT || 5000;

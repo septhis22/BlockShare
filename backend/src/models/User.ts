@@ -5,9 +5,11 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  public_key: string;
-  encrypted_private_key: string;
-  salt: string; // <-- CRITICAL FIX: Added salt to interface
+  public_key?: string;
+  encrypted_private_key?: string;
+  salt?: string;
+  key_phrase?: string;
+  wallet_address?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,7 +29,7 @@ const userSchema = new Schema<IUser>(
       unique: true,
       trim: true,
       lowercase: true,
-      match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please enter a valid email"]
+      match: [/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, "Please enter a valid email"]
     },
     password: {
     type: String,
@@ -35,20 +37,17 @@ const userSchema = new Schema<IUser>(
     minlength: [6, "Password must be at least 6 characters"],
     select: false  // <-- ADD THIS LINE
   },
-    public_key: {
+    public_key: { type: String, trim: true },
+    encrypted_private_key: { type: String, trim: true },
+    salt: { type: String, trim: true },
+    key_phrase: {
       type: String,
-      required: [true, "Public key is required"],
-      trim: true
+      select: false
     },
-    encrypted_private_key: {
+    wallet_address: {
       type: String,
-      required: [true, "Encrypted private key is required"],
-      trim: true
-    },
-    salt: { // <-- CRITICAL FIX: Added salt to schema definition
-      type: String,
-      required: [true, "Salt is required"],
-      trim: true
+      trim: true,
+      lowercase: true
     }
   },
   { 
@@ -59,4 +58,4 @@ const userSchema = new Schema<IUser>(
 // Index for better query performance
 userSchema.index({ email: 1 });
 
-export default mongoose.model<IUser>("User", userSchema);
+export default mongoose.model<IUser>("User", userSchema, "User");

@@ -48,26 +48,29 @@ const userSchema = new mongoose_1.Schema({
         unique: true,
         trim: true,
         lowercase: true,
-        match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please enter a valid email"]
+        match: [/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/, "Please enter a valid email"]
     },
     password: {
         type: String,
         required: [true, "Password is required"],
-        minlength: [6, "Password must be at least 6 characters"]
+        minlength: [6, "Password must be at least 6 characters"],
+        select: false // <-- ADD THIS LINE
     },
-    public_key: {
+    public_key: { type: String, trim: true },
+    encrypted_private_key: { type: String, trim: true },
+    salt: { type: String, trim: true },
+    key_phrase: {
         type: String,
-        required: [true, "Public key is required"],
-        trim: true
+        select: false
     },
-    encrypted_private_key: {
+    wallet_address: {
         type: String,
-        required: [true, "Encrypted private key is required"],
-        trim: true
+        trim: true,
+        lowercase: true
     }
 }, {
     timestamps: true
 });
 // Index for better query performance
 userSchema.index({ email: 1 });
-exports.default = mongoose_1.default.model("User", userSchema);
+exports.default = mongoose_1.default.model("User", userSchema, "User");

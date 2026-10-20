@@ -34,34 +34,20 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
-const sharedFileSchema = new mongoose_1.Schema({
-    senderId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "User",
-        required: true
-    },
-    receiverId: {
-        type: mongoose_1.Schema.Types.ObjectId,
-        ref: "User",
-        required: true
-    },
-    recordId: {
-        type: String,
-        required: true
-    },
-    fileName: {
-        type: String,
-        required: true
-    }
-}, {
-    timestamps: { createdAt: true, updatedAt: false },
-    toJSON: { virtuals: true }
-});
-// Rename createdAt to sharedAt
-sharedFileSchema.virtual('sharedAt').get(function () {
-    return this.createdAt;
-});
-// Index for better query performance
-sharedFileSchema.index({ receiverId: 1, createdAt: -1 });
-sharedFileSchema.index({ senderId: 1, createdAt: -1 });
-exports.default = mongoose_1.default.model("SharedFile", sharedFileSchema);
+const encryptedFileSchema = new mongoose_1.Schema({
+    fileId: { type: String, required: true },
+    senderId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    receiverId: { type: mongoose_1.Schema.Types.ObjectId, ref: "User", required: true },
+    gridFsId: { type: mongoose_1.Schema.Types.ObjectId },
+    cid: { type: String },
+    recordId: { type: String },
+    fileName: { type: String, required: true },
+    encryptedAesKey: { type: String, required: true },
+    recipientPublicKey: { type: String, required: true },
+    sharedAt: { type: Date }
+}, { timestamps: { createdAt: true, updatedAt: false } });
+encryptedFileSchema.index({ fileId: 1 }, { unique: true, partialFilterExpression: { fileId: { $type: "string" } } });
+encryptedFileSchema.index({ recordId: 1 }, { unique: true, partialFilterExpression: { recordId: { $type: "string" } } });
+encryptedFileSchema.index({ receiverId: 1, sharedAt: -1 });
+encryptedFileSchema.index({ senderId: 1, sharedAt: -1 });
+exports.default = mongoose_1.default.model("EncryptedFile", encryptedFileSchema, "Files");

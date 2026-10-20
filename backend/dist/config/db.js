@@ -6,8 +6,15 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importDefault(require("mongoose"));
 const connectDB = async () => {
     try {
-        await mongoose_1.default.connect(process.env.MONGO_URI);
-        console.log("MongoDB connected");
+        const mongoUri = process.env.MONGO_URI?.trim();
+        if (!mongoUri)
+            throw new Error('MONGO_URI is not configured');
+        if (!/^mongodb(?:\+srv)?:\/\//.test(mongoUri)) {
+            throw new Error('MONGO_URI must start with mongodb:// or mongodb+srv://');
+        }
+        const dbName = process.env.MONGO_DB_NAME?.trim() || 'BlockShare';
+        await mongoose_1.default.connect(mongoUri, { dbName });
+        console.log(`MongoDB connected to database "${mongoose_1.default.connection.name}"`);
     }
     catch (error) {
         console.error("DB connection failed:", error.message);

@@ -7,26 +7,38 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useAuth } from "../../context/AuthContext";
+import { getApiErrorMessage } from "../../utils/apiError";
 
 export function LoginDialog() {
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { login, connectWallet, walletAddress } = useAuth();
 
   const handleLogin = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
-      await login(email, password);
+      const address = walletAddress || await connectWallet();
+      await login(email.trim(), password, address);
       setOpen(false);
       setEmail("");
       setPassword("");
     } catch (error) {
-      console.error("Login failed:", error);
-      alert("Login failed");
+      setErrorMessage(getApiErrorMessage(error, "Login or MetaMask key activation failed."));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConnectWallet = async () => {
+    setErrorMessage(null);
+    try {
+      await connectWallet();
+    } catch (error) {
+      setErrorMessage(getApiErrorMessage(error, "Could not connect MetaMask."));
     }
   };
 
@@ -40,9 +52,17 @@ export function LoginDialog() {
         <DialogHeader>
           <DialogTitle>Login to BlockShare</DialogTitle>
           <DialogDescription>
-            Enter your credentials to access your account.
+            Connect MetaMask, then enter your credentials. You will sign your account phrase to unlock file encryption.
           </DialogDescription>
         </DialogHeader>
+        {walletAddress ? (
+          <p className="text-xs text-green-300">Wallet connected: {walletAddress}</p>
+        ) : (
+          <button onClick={handleConnectWallet} disabled={loading} className="rounded border border-blue-400 px-3 py-2 text-sm text-blue-200">
+            Connect MetaMask
+          </button>
+        )}
+        {errorMessage && <p role="alert" className="text-sm text-red-300">{errorMessage}</p>}
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium text-white">
@@ -72,7 +92,7 @@ export function LoginDialog() {
           </div>
         </div>
         <div className="flex justify-end">
-          <button onClick={handleLogin} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
+          <button onClick={handleLogin} disabled={loading || !walletAddress || !email || !password} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
             {loading ? "Logging in..." : "Login"}
           </button>
         </div>

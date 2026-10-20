@@ -1,13 +1,8 @@
 import { Routes, Route, useNavigate } from 'react-router-dom';
-import WriteOnBlock from './components/writeOnBlock';
+import { useState } from 'react';
 import RegistryUploader from './pages/RegistryUploader';
-import LandingPage from './pages/LandingPage';
-import { motion } from 'framer-motion';
 import { World } from './components/ui/globe';
-import { CircleArrowRight } from 'lucide-react';
 import BlurText from "./components/BlurText";
-import GradientText from './components/GradientText'
-import FadeContent from './components/FadeContent'
 import MagicBento from "./components/MagicBento";
 import { LoginDialog } from "./components/ui/login-dialog";
 import { RegisterDialog } from "./components/ui/register-dialog";
@@ -18,8 +13,18 @@ import { useAuth } from './context/AuthContext';
 import ShinyText from "./components/ShinyText.tsx";
 
 export function GlobeDemo() {
-  const { user, logout } = useAuth();
+  const { user, logout, walletAddress, connectWallet } = useAuth();
   const navigate = useNavigate();
+  const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
+
+  const handleConnectWallet = async () => {
+    setWalletConnectError(null);
+    try {
+      await connectWallet();
+    } catch (error) {
+      setWalletConnectError(error instanceof Error ? error.message : 'Could not connect MetaMask.');
+    }
+  };
   const handleAnimationComplete = () => {
     console.log('Animation complete');
   };
@@ -417,13 +422,15 @@ export function GlobeDemo() {
           <div className="flex justify-between items-center px-6 py-4">
             <div className="text-white text-xl top-0 font-bold">BlockShare</div>
             <div className="flex items-center gap-4">
-              {user ? (
-                <>
-                  <span className="text-white">Welcome, {user.name}</span>
-                  <button onClick={logout} className="text-white border border-white px-4 py-2 rounded hover:bg-white hover:text-black transition">
-                    Logout
-                  </button>
-                </>
+              {user && <span className="text-white">Welcome, {user.name}</span>}
+              {!walletAddress ? (
+                <button onClick={handleConnectWallet} className="text-white px-4 py-2 border border-blue-300 rounded hover:bg-white hover:text-black transition">
+                  Connect MetaMask
+                </button>
+              ) : user ? (
+                <button onClick={logout} className="text-white border border-white px-4 py-2 rounded hover:bg-white hover:text-black transition">
+                  Logout
+                </button>
               ) : (
                 <LoginDialog />
               )}
@@ -455,7 +462,7 @@ export function GlobeDemo() {
             A secure, verifiable system that enables organizations to share sensitive files without relying on a central authority and unparalleled security.
             </p>
              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-               {user ? (
+               {user && walletAddress ? (
                  <>
                    <button
                      onClick={() => navigate('/upload')}
@@ -470,15 +477,20 @@ export function GlobeDemo() {
                      Receive
                    </button>
                  </>
-               ) : (
+               ) : !user && walletAddress ? (
                  <>
                    <RegisterDialog />
                    <button className="border border-white hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
                      Learn More
                    </button>
                  </>
+               ) : (
+                 <button onClick={handleConnectWallet} className="border border-blue-300 hover:bg-white hover:text-black px-8 py-3 rounded-lg font-semibold transition">
+                   Connect MetaMask to continue
+                 </button>
                )}
              </div>
+             {walletConnectError && <p role="alert" className="mt-4 text-sm text-red-300">{walletConnectError}</p>}
           </div>
         </div>
       </div>

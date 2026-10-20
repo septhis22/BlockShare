@@ -9,63 +9,55 @@ import {
 } from "@/components/ui/dialog";
 import { CircleArrowRight } from 'lucide-react';
 import { useAuth } from "../../context/AuthContext";
-import EthCrypto from 'eth-crypto';
-import CryptoJS from 'crypto-js';
-
-// Function to generate a cryptographically secure random salt (16 bytes = 32 hex chars)
-const generateSalt = (length: number = 16): string => {
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(length));
-    return Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-};
+import { getApiErrorMessage } from "../../utils/apiError";
 
 export function RegisterDialog() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const { register } = useAuth();
+  const [feedback, setFeedback] = useState<{ message: string; success: boolean } | null>(null);
+  const { register, connectWallet, walletAddress } = useAuth();
 
   const handleRegister = async () => {
-    if (!name || !email || !password) {
-      console.error("All fields are required");
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+    if (!trimmedName || !trimmedEmail || !password) {
+      setFeedback({ message: "All fields are required.", success: false });
+      return;
+    }
+    if (trimmedName.length < 2 || trimmedName.length > 50) {
+      setFeedback({ message: "Name must be between 2 and 50 characters.", success: false });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(trimmedEmail)) {
+      setFeedback({ message: "Enter a valid email address.", success: false });
+      return;
+    }
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,}$/.test(password)) {
+      setFeedback({ message: "Password must be at least 6 characters and include uppercase, lowercase, and a number.", success: false });
       return;
     }
 
-    // Generate encryption key pair
-    const identity = EthCrypto.createIdentity();
-    console.log("Generated identity:", identity);
-    
-    // STEP 1: Generate random salt
-    const salt = generateSalt();
-    console.log("Generated salt:", salt);
-
-    // STEP 2: Derive encryption key from password using PBKDF2
-    const saltWordArray = CryptoJS.enc.Hex.parse(salt);
-    const key = CryptoJS.PBKDF2(password, saltWordArray, {
-        keySize: 256 / 32,  // 256 bits = 32 bytes = 8 words
-        iterations: 1000
-    });
-
-    // STEP 3: Encrypt private key using the derived key and salt as IV
-    const encryptedPrivKey = CryptoJS.AES.encrypt(identity.privateKey, key, {
-        iv: saltWordArray,
-        padding: CryptoJS.pad.Pkcs7,
-        mode: CryptoJS.mode.CBC
-    }).toString();
-
-    console.log("Registering with public key:", identity.publicKey);
-    console.log("Encrypted private key length:", encryptedPrivKey.length);
-
     setLoading(true);
+    setFeedback(null);
     try {
-      await register(name, email, password, identity.publicKey, encryptedPrivKey, salt);
+      const connectedAddress = walletAddress || await connectWallet();
+      await register(trimmedName, trimmedEmail, password, connectedAddress);
       setName("");
       setEmail("");
       setPassword("");
+      setFeedback({ message: "Account created successfully.", success: true });
     } catch (error: unknown) {
-      console.error("Registration failed:", error);
-      const errorMessage = (error as any)?.response?.data?.error || "Registration failed";
-      console.error(errorMessage);
+      const responseData = (error as { response?: { data?: { message?: unknown; errors?: Array<{ message?: unknown }> } } })?.response?.data;
+      const validationMessages = responseData?.errors
+        ?.map(item => typeof item.message === "string" ? item.message : "")
+        .filter(Boolean)
+        .join(" ");
+      const message = validationMessages ||
+        (typeof responseData?.message === "string" ? responseData.message :
+          error instanceof Error ? error.message : "Registration failed. Please try again.");
+      setFeedback({ message, success: false });
     } finally {
       setLoading(false);
     }
@@ -83,9 +75,35 @@ export function RegisterDialog() {
         <DialogHeader>
           <DialogTitle>Register for BlockShare</DialogTitle>
           <DialogDescription>
-            Create your account.
+            Connect MetaMask first. After account creation, you will sign a server-generated phrase to register your file-encryption public key.
           </DialogDescription>
         </DialogHeader>
+        {feedback && (
+          <div
+            role={feedback.success ? "status" : "alert"}
+            className={`rounded-lg border px-3 py-2 text-sm ${feedback.success ? "border-green-500/40 bg-green-500/10 text-green-300" : "border-red-500/40 bg-red-500/10 text-red-300"}`}
+          >
+            {feedback.message}
+          </div>
+        )}
+        {walletAddress ? (
+          <p className="text-xs text-green-300">Wallet connected: {walletAddress}</p>
+        ) : (
+          <button
+            onClick={async () => {
+              setFeedback(null);
+              try {
+                await connectWallet();
+              } catch (error) {
+                setFeedback({ message: getApiErrorMessage(error, "Could not connect MetaMask."), success: false });
+              }
+            }}
+            disabled={loading}
+            className="rounded border border-blue-400 px-3 py-2 text-sm text-blue-200"
+          >
+            Connect MetaMask
+          </button>
+        )}
         <div className="grid gap-4 py-4">
           <div className="space-y-2">
             <label htmlFor="name" className="text-sm font-medium text-white">
@@ -125,10 +143,13 @@ export function RegisterDialog() {
               className="w-full px-4 py-3 border border-zinc-600 bg-zinc-800 text-white rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 placeholder-zinc-400"
               placeholder="Enter your password"
             />
+            <p className="text-xs text-zinc-400">
+              At least 6 characters, including uppercase, lowercase, and a number.
+            </p>
           </div>
         </div>
         <div className="flex justify-end">
-          <button onClick={handleRegister} disabled={loading} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
+          <button onClick={handleRegister} disabled={loading || !walletAddress} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50">
             {loading ? "Registering..." : "Register"}
           </button>
         </div>

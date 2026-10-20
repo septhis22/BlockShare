@@ -1,9 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import EthCrypto from 'eth-crypto';
-import { Upload,  Download, LogOut, User, Shield, Zap, Sparkles, Cloud, FileText, X, Lock, Key, Settings } from 'lucide-react';
+import { Upload, Download, LogOut, User, Shield, Cloud, FileText, X, Lock, Key } from 'lucide-react';
 import CryptoJS from 'crypto-js';
-import { uploadToPinata } from '../utils/pinataUploads';
+import { uploadEncryptedFileToBackend } from '../utils/encryptedFileApi';
+import { deriveWalletEncryptionIdentity } from '../utils/walletEncryption';
+import { getApiErrorMessage } from '../utils/apiError';
 import { uploadRecordToBlockchain } from '../utils/dataOnChain';
 import MetaConnect from "../components/metaConnect";
 import { useAuth } from '../context/AuthContext';
@@ -13,8 +15,8 @@ import { ProfileSettings } from '../components/profileSetting';
 
 interface UploadResult {
   name: string;
-  ipfsHash: string;
-  dek: string;
+  fileId: string;
+  cid?: string;
   recordId?: string;
   txHash?: string;
 }
@@ -27,25 +29,19 @@ interface SelectedFile {
   file: File;
 }
 
-// Utility function to generate a cryptographically secure random salt
-const generateSalt = (length: number = 16): string => {
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(length));
-    return Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
 
 export default function FileTransfer() {
-  const { user, logout, token } = useAuth();
+  const { user, logout, token, encryptionIdentity, setEncryptionIdentity } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('transfer');
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [recipientAddress, setRecipientAddress] = useState('');
-  const [endToEndEncryption, setEndToEndEncryption] = useState(true);
-  const [setExpiryDate, setSetExpiryDate] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [encryptionReady, setEncryptionReady] = useState(false);
+  const [keyStatus, setKeyStatus] = useState('Connect MetaMask to activate encryption.');
   
   // --- NEW STATE FOR PROFILE DROPDOWN/MODAL ---
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
@@ -125,23 +121,27 @@ export default function FileTransfer() {
     setSelectedFiles(selectedFiles.filter(file => file.id !== id));
   };
 
-  const generateRandomKey = (): string => {
-    return CryptoJS.lib.WordArray.random(16).toString(); // 128-bit DEK
-  };
-
   const encryptFile = async (file: File) => {
-    const dek = generateRandomKey();
-    const arrayBuffer = await file.arrayBuffer();
-    const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer as any);
-    const encryptedData = CryptoJS.AES.encrypt(wordArray, dek).toString();
-    const encryptedBlob = new Blob([encryptedData], { type: "text/plain" });
-    return { encryptedBlob, dek };
+    const dekBytes = window.crypto.getRandomValues(new Uint8Array(32));
+    const iv = window.crypto.getRandomValues(new Uint8Array(12));
+    const aesKey = await window.crypto.subtle.importKey('raw', dekBytes, 'AES-GCM', false, ['encrypt']);
+    const plaintext = await file.arrayBuffer();
+    const encrypted = await window.crypto.subtle.encrypt({ name: 'AES-GCM', iv }, aesKey, plaintext);
+    const payload = new Uint8Array(iv.length + encrypted.byteLength);
+    payload.set(iv, 0);
+    payload.set(new Uint8Array(encrypted), iv.length);
+    const dek = Array.from(dekBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+
+    return { encryptedBlob: new Blob([payload.buffer], { type: 'application/octet-stream' }), dek };
   };
 
   const handleEncryptAndUpload = async () => {
-    if (!user) {
-      // Replaced alert
+    if (!user || !token) {
       console.error("Please login first");
+      return;
+    }
+    if (!encryptionReady) {
+      setKeyStatus('Connect MetaMask and sign the key phrase before sending files.');
       return;
     }
     if (selectedFiles.length === 0 || !recipientAddress) return;
@@ -158,20 +158,16 @@ export default function FileTransfer() {
         headers: { Authorization: `Bearer ${token}` }
       });
       recipientPublicKey = response.data.data.user.public_key;
-      console.log("✅ Recipient public key:", recipientPublicKey);
-      console.log("Length:", recipientPublicKey.length);
-
-      // Validate public key format (EthCrypto uncompressed: 128 chars)
-      if (recipientPublicKey.length !== 128) {
+      // Validate the derived uncompressed secp256k1 public key.
+      if (!/^[0-9a-f]{128}$/i.test(recipientPublicKey)) {
         // Replaced alert
         console.error(`Recipient's public key is not in the correct format. Length: ${recipientPublicKey.length}. Expected 128 characters. They may need to re-register.`);
         setIsSending(false);
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("❌ Failed to get recipient public key:", err);
-      const errorMessage = err.response?.data?.message || "Failed to find recipient or get their public key";
-      // Replaced alert
+      const errorMessage = getApiErrorMessage(err, "Failed to find recipient or get their public key");
       console.error(errorMessage);
       setIsSending(false);
       return;
@@ -181,78 +177,56 @@ export default function FileTransfer() {
       try {
         // 1️⃣ Compute hash of the ORIGINAL, NON-ENCRYPTED data
         const originalFileArrayBuffer = await selectedFile.file.arrayBuffer();
-        const originalFileWordArray = CryptoJS.lib.WordArray.create(originalFileArrayBuffer as any);
+        const originalFileWordArray = CryptoJS.lib.WordArray.create(new Uint8Array(originalFileArrayBuffer));
         const dHash = CryptoJS.SHA256(originalFileWordArray).toString();
         console.log(`Computed hash for ${selectedFile.name}:`, dHash);
         
         // 2️⃣ Encrypt file
         const { encryptedBlob, dek } = await encryptFile(selectedFile.file);
 
-        // 3️⃣ Encrypt DEK with recipient's public key (remove 0x prefix)
+        // Encrypt the random AES-256 key for the recipient.
         const publicKeyForEncryption = recipientPublicKey.startsWith('0x') ? recipientPublicKey.slice(2) : recipientPublicKey;
-        console.log("Encrypting with public key (without 0x):", publicKeyForEncryption);
         const encryptedDek = await EthCrypto.encryptWithPublicKey(publicKeyForEncryption, dek);
         const encryptedDekString = EthCrypto.cipher.stringify(encryptedDek);
-        console.log("Encrypted DEK:", encryptedDekString);
+        const fileId = window.crypto.randomUUID();
 
-        // 4️⃣ Upload to Pinata
-        const response = await uploadToPinata(encryptedBlob, selectedFile.name + ".enc");
-        console.log("📦 Pinata response:", response);
+        // Send only ciphertext and the recipient-encrypted AES key to the backend.
+        const { cid } = await uploadEncryptedFileToBackend(
+          token,
+          fileId,
+          selectedFile.name,
+          recipientAddress,
+          encryptedDekString,
+          publicKeyForEncryption,
+          encryptedBlob
+        );
 
-        // ✅ SAFE CID EXTRACTION - handles all cases
-        let eCID: string | null = null;
-
-        if (typeof response === "string") {
-          eCID = response;
-        } else if (response && typeof response === "object") {
-          eCID = (response as any).IpfsHash ||
-                  (response as any).cid ||
-                  (response as any).CID ||
-                  null;
-        }
-
-        if (!eCID) {
-          console.error("❌ Could not extract CID from Pinata response:", response);
-          continue;
-        }
-
-        console.log("✅ Extracted CID:", eCID);
-
-        // 5️⃣ Store on blockchain
         try {
-          // Pass the hash of the original data (dHash) to the blockchain function
-          const { recordId, txHash } = await uploadRecordToBlockchain(eCID, encryptedDekString, dHash);
+          // The contract stores the Pinata CID, encrypted AES key, and plaintext hash.
+          const { recordId, txHash } = await uploadRecordToBlockchain(cid, encryptedDekString, dHash);
 
-          // 6️⃣ Share with recipient via backend
-          try {
-            await axios.post('http://localhost:5000/api/shared/share', {
-              receiverEmail: recipientAddress,
-              recordId,
-              fileName: selectedFile.name
-            }, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
-            console.log(`✅ File ${selectedFile.name} shared with recipient.`);
-          } catch (shareErr: any) {
-            console.error(`❌ Failed to share ${selectedFile.name} with recipient:`, shareErr);
-            const shareError = shareErr.response?.data?.message || "Failed to share file";
-            console.error("Share error:", shareError);
-          }
+          await axios.post('http://localhost:5000/api/shared/share', {
+            receiverEmail: recipientAddress,
+            recordId,
+            fileId,
+            fileName: selectedFile.name
+          }, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
 
           results.push({
             name: selectedFile.name,
-            ipfsHash: eCID,
-            dek: encryptedDekString,
+            fileId,
+            cid,
             recordId,
             txHash
           });
-          console.log(`✅ File ${selectedFile.name} uploaded & stored on-chain.`);
         } catch (err) {
-          console.error(`❌ Blockchain upload failed for ${selectedFile.name}:`, err);
+          console.error(`Blockchain/share registration failed for ${selectedFile.name}:`, err);
           results.push({
             name: selectedFile.name,
-            ipfsHash: eCID,
-            dek: encryptedDekString
+            fileId,
+            cid
           });
         }
       } catch (err) {
@@ -289,10 +263,38 @@ export default function FileTransfer() {
     return name.substring(0, maxLength - 3) + '...';
   };
 
-  const handleWalletConnected = (account: string) => {
-    console.log("Wallet connected:", account);
+  const handleWalletConnected = useCallback(async (account: string) => {
     setIsWalletConnected(true);
-  };
+    setEncryptionReady(false);
+    setKeyStatus('Sign the server-provided key phrase in MetaMask to unlock encryption.');
+
+    if (!token) {
+      setKeyStatus('Log in before activating file encryption.');
+      return;
+    }
+
+    try {
+      if (encryptionIdentity?.address.toLowerCase() === account.toLowerCase()) {
+        setEncryptionReady(true);
+        setKeyStatus('Encryption key is ready for this session.');
+        return;
+      }
+      const identity = await deriveWalletEncryptionIdentity(token, account);
+      setEncryptionIdentity(identity);
+      setEncryptionReady(true);
+      setKeyStatus('Encryption key is ready for this session.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not unlock the encryption key.';
+      setKeyStatus(message);
+      console.error('Wallet encryption setup failed:', message);
+    }
+  }, [token, encryptionIdentity, setEncryptionIdentity]);
+
+  const handleWalletDisconnected = useCallback(() => {
+    setIsWalletConnected(false);
+    setEncryptionReady(false);
+    setKeyStatus('Connect MetaMask to activate encryption.');
+  }, []);
   
   // Function to open the Key Settings modal
   const openKeySettings = () => {
@@ -399,7 +401,7 @@ export default function FileTransfer() {
             </nav>
 
             <div className="flex items-center space-x-3">
-              <MetaConnect onConnected={handleWalletConnected} />
+              <MetaConnect onConnected={handleWalletConnected} onDisconnected={handleWalletDisconnected} />
                
               {/* --- EDITED: Profile Dropdown Menu --- */}
               <div className="relative" ref={profileRef}>
@@ -576,11 +578,13 @@ export default function FileTransfer() {
                         <div className="flex-1">
                           <p className="font-semibold text-white text-sm">{result.name}</p>
                           <div className="text-xs space-y-1 mt-2">
-                            <p className="text-blue-400">
-                              IPFS: <code className="bg-gray-900 px-1 rounded">{result.ipfsHash.slice(0, 20)}...</code>
-                            </p>
+                            {result.cid && (
+                              <p className="text-blue-400">
+                                Pinata CID: <code className="bg-gray-900 px-1 rounded">{result.cid}</code>
+                              </p>
+                            )}
                             <p className="text-cyan-400">
-                              DEK: <code className="bg-gray-900 px-1 rounded">{result.dek.slice(0, 15)}...</code>
+                              Recipient-encrypted AES key stored with the encrypted file
                             </p>
                             {result.recordId && (
                               <p className="text-green-400">
@@ -594,14 +598,9 @@ export default function FileTransfer() {
                             )}
                           </div>
                         </div>
-                        <a
-                          href={`https://gateway.pinata.cloud/ipfs/${result.ipfsHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30 transition-colors border border-blue-500/30"
-                        >
-                          View
-                        </a>
+                        <span className={`px-3 py-1 rounded text-xs border ${result.recordId ? "bg-green-500/10 text-green-400 border-green-500/30" : "bg-yellow-500/10 text-yellow-400 border-yellow-500/30"}`}>
+                          {result.recordId ? "Stored" : "Pinata uploaded; chain/share step incomplete"}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -618,8 +617,13 @@ export default function FileTransfer() {
                 <div className="text-center">
                   <Key className="w-8 h-8 text-yellow-400 mx-auto mb-2" />
                   <p className="text-yellow-400 text-sm font-semibold mb-2">Connect Wallet Required</p>
-                  <p className="text-gray-400 text-xs">Please connect your wallet to enable blockchain transactions</p>
+                  <p className="text-gray-400 text-xs">Please connect your wallet to sign your key phrase and enable transactions</p>
                 </div>
+              </div>
+            )}
+            {isWalletConnected && (
+              <div className={`rounded-xl p-4 border ${encryptionReady ? 'bg-green-900/20 border-green-500/30' : 'bg-yellow-900/20 border-yellow-500/30'}`}>
+                <p className={`text-sm ${encryptionReady ? 'text-green-300' : 'text-yellow-300'}`}>{keyStatus}</p>
               </div>
             )}
 
@@ -651,60 +655,40 @@ export default function FileTransfer() {
               </div>
             </div>
 
-            {/* Security Settings */}
+            {/* Security Overview */}
             <div className="bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl p-5 border border-gray-800 hover:border-cyan-500/30 transition-all duration-500 group">
               <h2 className="text-lg font-bold text-white mb-3 flex items-center space-x-2">
                 <Shield className="w-4 h-4 text-cyan-400" />
                 <span>Security</span>
               </h2>
-              
+
               <div className="space-y-2">
-                <label className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-all duration-300 border border-gray-700 hover:border-blue-500/30">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={endToEndEncryption}
-                      onChange={(e) => setEndToEndEncryption(e.target.checked)}
-                      className="w-4 h-4 bg-gray-800 border border-blue-500 rounded focus:ring-2 focus:ring-blue-500/50 checked:bg-blue-500 appearance-none transition-colors duration-300"
-                    />
-                    {endToEndEncryption && (
-                      <div className="absolute inset-0 flex items-center justify-center text-white">
-                        <div className="w-1.5 h-1.5 bg-white rounded-sm" />
-                      </div>
-                    )}
+                <div className="flex items-center space-x-3 p-2 rounded-lg border border-gray-700">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+                    <Lock className="w-4 h-4 text-blue-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-white text-sm">AES-256 Encryption</p>
-                    <p className="text-xs text-blue-400">Military-grade security</p>
+                    <p className="font-semibold text-white text-sm">End-to-End Encrypted</p>
+                    <p className="text-xs text-gray-400">Always on, every file</p>
                   </div>
-                </label>
-                
-                <label className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-800/50 cursor-pointer transition-all duration-300 border border-gray-700 hover:border-cyan-500/30">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      checked={setExpiryDate}
-                      onChange={(e) => setSetExpiryDate(e.target.checked)}
-                      className="w-4 h-4 bg-gray-800 border border-cyan-500 rounded focus:ring-2 focus:ring-cyan-500/50 checked:bg-cyan-500 appearance-none transition-colors duration-300"
-                    />
-                    {setExpiryDate && (
-                      <div className="absolute inset-0 flex items-center justify-center text-white">
-                        <div className="w-1.5 h-1.5 bg-white rounded-sm" />
-                      </div>
-                    )}
+                </div>
+
+                <div className="flex items-center space-x-3 p-2 rounded-lg border border-gray-700">
+                  <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
+                    <Shield className="w-4 h-4 text-cyan-400" />
                   </div>
                   <div>
-                    <p className="font-semibold text-white text-sm">Auto Expiry</p>
-                    <p className="text-xs text-cyan-400">24h limit</p>
+                    <p className="font-semibold text-white text-sm">Blockchain Verified</p>
+                    <p className="text-xs text-gray-400">Tamper-proof record on-chain</p>
                   </div>
-                </label>
+                </div>
               </div>
             </div>
 
             {/* Send Button */}
             <button
               onClick={handleEncryptAndUpload}
-              disabled={selectedFiles.length === 0 || !recipientAddress || isSending || !isWalletConnected}
+              disabled={selectedFiles.length === 0 || !recipientAddress || isSending || !isWalletConnected || !encryptionReady}
               className="w-full py-3 bg-blue-500/20 backdrop-blur-md border border-blue-400/50 hover:bg-blue-500/30 text-white rounded-lg font-bold transition-all duration-500 disabled:opacity-30 disabled:cursor-not-allowed shadow-lg hover:shadow-blue-500/25 transform hover:-translate-y-0.5 disabled:transform-none flex items-center justify-center space-x-2 group relative overflow-hidden"
             >
               <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md" />

@@ -1,7 +1,154 @@
 import { Response, Request } from 'express';
-import SharedFile from '../models/SharedFile';
+import mongoose from 'mongoose';
+import { GridFSBucket } from 'mongodb';
+import EncryptedFile from '../models/EncryptedFile';
 import User from '../models/User';
 import { JwtPayload } from '../types/auth';
+
+const getEncryptedFilesBucket = (): GridFSBucket => {
+  const db = mongoose.connection.db;
+  if (!db) throw new Error('MongoDB is not connected');
+  return new GridFSBucket(db, { bucketName: 'encryptedFiles' });
+};
+
+const decodeHeader = (value: string | undefined): string | null => {
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+};
+
+export const uploadEncryptedFile = async (req: Request, res: Response) => {
+  try {
+    const userPayload = req.user as JwtPayload;
+    if (!userPayload?.userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const fileId = req.get('x-file-id');
+    const fileName = decodeHeader(req.get('x-file-name'));
+    const receiverEmail = decodeHeader(req.get('x-recipient-email'));
+    const encryptedAesKey = decodeHeader(req.get('x-encrypted-aes-key'));
+    const recipientPublicKey = decodeHeader(req.get('x-recipient-public-key'));
+    const encryptedBytes = req.body;
+
+    if (!fileId || !/^[a-f0-9-]{36}$/i.test(fileId) || !fileName || !receiverEmail || !encryptedAesKey || !recipientPublicKey || !/^[0-9a-f]{128}$/i.test(recipientPublicKey)) {
+      return res.status(400).json({ success: false, message: 'Missing or invalid encrypted-file metadata' });
+    }
+    if (!Buffer.isBuffer(encryptedBytes) || encryptedBytes.length === 0) {
+      return res.status(400).json({ success: false, message: 'Encrypted file body is required' });
+    }
+    if (encryptedAesKey.length > 8192 || fileName.length > 255) {
+      return res.status(413).json({ success: false, message: 'Encrypted-file metadata is too large' });
+    }
+
+    const receiver = await User.findOne({ email: receiverEmail.toLowerCase().trim() });
+    if (!receiver) {
+      return res.status(404).json({ success: false, message: 'Receiver not found' });
+    }
+    if (!receiver.public_key) {
+      return res.status(409).json({
+        success: false,
+        message: 'Receiver must connect MetaMask and activate file encryption before files can be shared.'
+      });
+    }
+    if (await EncryptedFile.exists({ fileId })) {
+      return res.status(409).json({ success: false, message: 'File ID already exists' });
+    }
+
+    const pinataJwt = process.env.PINATA_JWT?.trim();
+    if (!pinataJwt) {
+      console.error('PINATA_JWT is not configured');
+      return res.status(503).json({ success: false, message: 'File storage is not configured' });
+    }
+
+    const formData = new FormData();
+    formData.append('network', 'public');
+    formData.append(
+      'file',
+      new Blob([new Uint8Array(encryptedBytes)], { type: 'application/octet-stream' }),
+      `${fileId}.enc`
+    );
+
+    const pinataResponse = await fetch('https://uploads.pinata.cloud/v3/files', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${pinataJwt}` },
+      body: formData
+    });
+    if (!pinataResponse.ok) {
+      const errorDetails = (await pinataResponse.text()).slice(0, 1000);
+      console.error('Pinata upload failed:', {
+        status: pinataResponse.status,
+        statusText: pinataResponse.statusText,
+        response: errorDetails
+      });
+      return res.status(502).json({ success: false, message: 'Failed to upload encrypted file to storage' });
+    }
+
+    const pinataResult = await pinataResponse.json() as { data?: { cid?: unknown } };
+    const cid = pinataResult.data?.cid;
+    if (typeof cid !== 'string' || cid.length === 0) {
+      console.error('Pinata upload response did not contain a CID');
+      return res.status(502).json({ success: false, message: 'Storage did not return a file CID' });
+    }
+
+    await EncryptedFile.create({
+      fileId,
+      senderId: userPayload.userId,
+      receiverId: receiver._id,
+      cid,
+      fileName,
+      encryptedAesKey,
+      recipientPublicKey: recipientPublicKey.toLowerCase()
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Encrypted file uploaded to Pinata',
+      data: { fileId, cid }
+    });
+  } catch (error) {
+    console.error('Encrypted file upload error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to store encrypted file' });
+  }
+};
+
+export const downloadEncryptedFile = async (req: Request, res: Response) => {
+  try {
+    const userPayload = req.user as JwtPayload;
+    if (!userPayload?.userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const encryptedFile = await EncryptedFile.findOne({
+      recordId: req.params.recordId,
+      receiverId: userPayload.userId
+    });
+    if (!encryptedFile) {
+      return res.status(404).json({ success: false, message: 'Encrypted file not found for this share' });
+    }
+    if (!encryptedFile.gridFsId) {
+      return res.status(404).json({ success: false, message: 'Legacy encrypted file data not found in GridFS' });
+    }
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('X-Encrypted-Aes-Key', encodeURIComponent(encryptedFile.encryptedAesKey));
+    res.setHeader('X-Original-File-Name', encodeURIComponent(encryptedFile.fileName));
+
+    const downloadStream = getEncryptedFilesBucket().openDownloadStream(encryptedFile.gridFsId);
+    downloadStream.on('error', (error) => {
+      console.error('Encrypted file download error:', error);
+      if (!res.headersSent) res.status(404).json({ success: false, message: 'Encrypted file data not found' });
+      else res.destroy(error);
+    });
+    downloadStream.pipe(res);
+  } catch (error) {
+    console.error('Encrypted file retrieval error:', error);
+    if (!res.headersSent) res.status(500).json({ success: false, message: 'Failed to retrieve encrypted file' });
+  }
+};
 
 export const shareFile = async (req: Request, res: Response) => {
   try {
@@ -13,62 +160,61 @@ export const shareFile = async (req: Request, res: Response) => {
       });
     }
 
-    const { receiverEmail, recordId, fileName } = req.body;
+    const { receiverEmail, recordId, fileName, fileId } = req.body;
 
-    if (!receiverEmail || !recordId || !fileName) {
+    if (
+      typeof receiverEmail !== 'string' || !receiverEmail.trim() ||
+      typeof recordId !== 'string' || !/^0x[0-9a-f]{64}$/i.test(recordId) ||
+      typeof fileName !== 'string' || !fileName.trim() || fileName.length > 255 ||
+      typeof fileId !== 'string' || !/^[a-f0-9-]{36}$/i.test(fileId)
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'receiverEmail, recordId, and fileName are required'
+        message: 'Valid receiverEmail, recordId, fileName, and fileId are required'
       });
     }
 
-    // Find receiver
     const receiver = await User.findOne({ email: receiverEmail.toLowerCase().trim() });
     if (!receiver) {
-      return res.status(404).json({
-        success: false,
-        message: 'Receiver not found'
-      });
+      return res.status(404).json({ success: false, message: 'Receiver not found' });
     }
 
-    // Check if already shared
-    const existingShare = await SharedFile.findOne({
+    const encryptedFile = await EncryptedFile.findOne({
+      fileId,
       senderId: userPayload.userId,
-      receiverId: receiver._id,
-      recordId
+      receiverId: receiver._id
     });
-
-    if (existingShare) {
-      return res.status(409).json({
-        success: false,
-        message: 'File already shared with this user'
-      });
+    if (!encryptedFile) {
+      return res.status(404).json({ success: false, message: 'Uploaded encrypted file does not match this sender and recipient' });
+    }
+    if (encryptedFile.recipientPublicKey !== receiver.public_key?.toLowerCase()) {
+      return res.status(409).json({ success: false, message: 'The recipient encryption key changed during upload. Please retry.' });
+    }
+    if (encryptedFile.recordId || await EncryptedFile.exists({ recordId })) {
+      return res.status(409).json({ success: false, message: 'File already shared with this user' });
     }
 
-    // Create share record
-    const sharedFile = new SharedFile({
-      senderId: userPayload.userId,
-      receiverId: receiver._id,
-      recordId,
-      fileName
-    });
+    encryptedFile.recordId = recordId;
+    encryptedFile.sharedAt = new Date();
+    await encryptedFile.save();
 
-    await sharedFile.save();
-
-    res.status(201).json({
+    return res.status(201).json({
       success: true,
       message: 'File shared successfully',
       data: {
         sharedFile: {
-          id: sharedFile._id.toString(),
-          recordId: sharedFile.recordId,
-          fileName: sharedFile.fileName,
-          sharedAt: sharedFile.sharedAt
+          id: encryptedFile._id.toString(),
+          recordId: encryptedFile.recordId,
+          fileName: encryptedFile.fileName,
+          sharedAt: encryptedFile.sharedAt
         }
       }
     });
 
   } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      return res.status(409).json({ success: false, message: 'File or record has already been shared' });
+    }
     console.error('Share file error:', error);
     res.status(500).json({
       success: false,
@@ -87,9 +233,12 @@ export const getSharedFiles = async (req: Request, res: Response) => {
       });
     }
 
-    const sharedFiles = await SharedFile.find({ receiverId: userPayload.userId })
+    const sharedFiles = await EncryptedFile.find({
+      receiverId: userPayload.userId,
+      recordId: { $exists: true }
+    })
       .populate('senderId', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ sharedAt: -1 });
 
     res.status(200).json({
       success: true,
@@ -99,7 +248,7 @@ export const getSharedFiles = async (req: Request, res: Response) => {
           id: sf._id.toString(),
           recordId: sf.recordId,
           fileName: sf.fileName,
-          sharedAt: sf.sharedAt,
+          sharedAt: sf.sharedAt ?? sf.createdAt,
           sender: {
             name: (sf.senderId as any).name,
             email: (sf.senderId as any).email
@@ -127,9 +276,12 @@ export const getSentFiles = async (req: Request, res: Response) => {
       });
     }
 
-    const sentFiles = await SharedFile.find({ senderId: userPayload.userId })
+    const sentFiles = await EncryptedFile.find({
+      senderId: userPayload.userId,
+      recordId: { $exists: true }
+    })
       .populate('receiverId', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ sharedAt: -1 });
 
     res.status(200).json({
       success: true,
@@ -139,7 +291,7 @@ export const getSentFiles = async (req: Request, res: Response) => {
           id: sf._id.toString(),
           recordId: sf.recordId,
           fileName: sf.fileName,
-          sharedAt: sf.sharedAt,
+          sharedAt: sf.sharedAt ?? sf.createdAt,
           receiver: {
             name: (sf.receiverId as any).name,
             email: (sf.receiverId as any).email

@@ -9,34 +9,50 @@ declare global {
 }
 
 interface MetaConnectProps {
-  onConnected?: (account: string) => void; // optional callback when wallet connects
+  onConnected?: (account: string) => void;
+  onDisconnected?: () => void;
 }
 
-const MetaConnect: React.FC<MetaConnectProps> = ({ onConnected }) => {
+const MetaConnect: React.FC<MetaConnectProps> = ({ onConnected, onDisconnected }) => {
   // Zustand store selectors and actions
-  const isConnected = useAppStore((state) => state.metaIsConnected);
   const setMetaConnected = useAppStore((state) => state.setMetaIsConnected);
 
   const [account, setAccount] = useState<string>();
 
   // --- Check if already connected on mount ---
   useEffect(() => {
+    const ethereum = window.ethereum;
+    if (!ethereum) return;
+
+    const notifyConnected = (account: string) => {
+      setAccount(account);
+      setMetaConnected(true);
+      if (onConnected) onConnected(account);
+    };
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length === 0) {
+        setAccount(undefined);
+        setMetaConnected(false);
+        onDisconnected?.();
+        return;
+      }
+      notifyConnected(accounts[0]);
+    };
+
     const checkConnection = async () => {
-      if (window.ethereum) {
-        try {
-          const accounts: string[] = await window.ethereum.request({ method: "eth_accounts" });
-          if (accounts.length > 0) {
-            setAccount(accounts[0]);
-            setMetaConnected(true);
-            if (onConnected) onConnected(accounts[0]);
-          }
-        } catch (err) {
-          console.error("Error checking MetaMask accounts:", err);
-        }
+      try {
+        const accounts: string[] = await ethereum.request({ method: "eth_accounts" });
+        if (accounts.length > 0) notifyConnected(accounts[0]);
+      } catch (err) {
+        console.error("Error checking MetaMask accounts:", err);
       }
     };
+
+    ethereum.on?.("accountsChanged", handleAccountsChanged);
     checkConnection();
-  }, [setMetaConnected, onConnected]);
+    return () => ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+  }, [setMetaConnected, onConnected, onDisconnected]);
 
   // --- Connect MetaMask ---
   const connectWallet = async () => {
@@ -49,10 +65,10 @@ const MetaConnect: React.FC<MetaConnectProps> = ({ onConnected }) => {
       const accounts: string[] = await window.ethereum.request({
         method: "eth_requestAccounts",
       });
+      if (!accounts[0]) throw new Error('No MetaMask account was selected.');
       setAccount(accounts[0]);
       setMetaConnected(true);
       if (onConnected) onConnected(accounts[0]);
-      console.log("MetaMask connected:", accounts[0]);
     } catch (err) {
       console.error("Error connecting MetaMask:", err);
     }

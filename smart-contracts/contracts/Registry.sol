@@ -5,9 +5,9 @@ pragma solidity ^0.8.20;
 contract Registry {
 
     struct Record {
-        string eCID;     // encrypted CID or plain CID
-        string eDEK;     // encrypted DEK (stringified)
-        string dHash;    // hash of the encrypted file (hex string)
+        string eCID;     // storage reference (IPFS CID or backend file ID)
+        string eDEK;     // recipient-encrypted AES key (stringified)
+        string dHash;    // SHA-256 hash of the original file (hex string)
         uint256 time;    // timestamp of storage
     }
 

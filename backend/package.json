@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon src/server.ts",
+    "dev": "nodemon --watch src --watch .env --ext ts,json,env src/server.ts",
     "build": "tsc",
+    "migrate:encryption-key-field": "ts-node src/scripts/migrateEncryptionKeyField.ts",
     "start": "node dist/server.js"
   },
   "keywords": [],

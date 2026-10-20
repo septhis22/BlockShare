@@ -1,54 +1,19 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
-import EthCrypto from 'eth-crypto';
-import CryptoJS from 'crypto-js';
 import { useAuth } from "../context/AuthContext";
-import { User, RefreshCw, Key, AlertTriangle, Download } from 'lucide-react';
-
-// Utility function to generate a cryptographically secure random salt
-const generateSalt = (length: number = 16): string => {
-    const saltBytes = window.crypto.getRandomValues(new Uint8Array(length));
-    return Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
-};
-
-// Helper function to download the new private key
-const downloadNewPrivateKey = (
-    privateKey: string, 
-    encryptedPrivateKey: string, 
-    salt: string
-) => {
-    const keyData = {
-        privateKey: privateKey, // Unencrypted for immediate use
-        encryptedPrivateKey: encryptedPrivateKey,
-        salt: salt,
-        generatedAt: new Date().toISOString(),
-        warning: 'Keep this file secure! You will need it to decrypt your files.'
-    };
-
-    // Create a blob and download it
-    const blob = new Blob([JSON.stringify(keyData, null, 2)], { 
-        type: 'application/json' 
-    });
-    
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `private-key-${Date.now()}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    
-    console.log('New private key downloaded successfully');
-};
+import {
+    clearWalletEncryptionIdentityCache,
+    deriveWalletEncryptionIdentity
+} from '../utils/walletEncryption';
+import { RefreshCw, Key, AlertTriangle, Download } from 'lucide-react';
 
 /**
  * Component for revoking and regenerating the user's encryption keys.
  * This is a critical security operation.
  */
 export function ProfileSettings() {
-    const { user, token } = useAuth();
-    const [password, setPassword] = useState("");
+    const { user, token, setEncryptionIdentity } = useAuth();
+
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     
@@ -58,7 +23,7 @@ export function ProfileSettings() {
     const [hasAcknowledged, setHasAcknowledged] = useState(false);
 
     // Placeholder for the API URL (ensure this matches your server config)
-    const API_URL = 'http://localhost:5000/api/auth/regenerate-keys';
+    const API_URL = 'http://localhost:5000/api/auth/rotate-key-phrase';
 
     // This function orchestrates the entire key revocation and update process.
     const handleKeyRegeneration = async () => {
@@ -78,68 +43,38 @@ export function ProfileSettings() {
         }
 
         setLoading(true);
-        setStatusMessage("1. Generating new ECC key pair...");
+        setStatusMessage("Verifying your password and rotating the server key phrase...");
 
         try {
-            // --- STEP 1: Generate NEW ECC Key Pair and Salt ---
-            const newIdentity = EthCrypto.createIdentity();
-            const newSalt = generateSalt();
+            if (!window.ethereum) throw new Error("MetaMask is required to rotate the encryption key.");
+            const accounts: string[] = await window.ethereum.request({ method: "eth_requestAccounts" });
+            if (!accounts.length) throw new Error("Connect a MetaMask account to continue.");
 
-            // --- STEP 2: Encrypt NEW Private Key using Password + Salt ---
-            // Combine password with salt for stronger encryption
-            const keyDerivation = password + newSalt;
-            const newEncryptedPrivKey = CryptoJS.AES.encrypt(
-                newIdentity.privateKey, 
-                keyDerivation
-            ).toString();
-
-            // --- STEP 3: Call Backend API to Verify Password and Update Keys ---
-            setStatusMessage("2. Verifying password and updating database...");
-            
-            const response = await axios.post(
-                API_URL, 
-                {
-                    password: confirmPassword,
-                    new_public_key: newIdentity.publicKey,
-                    new_encrypted_private_key: newEncryptedPrivKey,
-                    new_salt: newSalt
-                }, 
-                {
-                    headers: { 
-                        'Authorization': `Bearer ${token}` 
-                    }
-                }
+            await axios.post(
+                API_URL,
+                { password: confirmPassword },
+                { headers: { Authorization: `Bearer ${token}` } }
             );
 
-            // --- STEP 4: Download the new private key ---
-            setStatusMessage("3. Downloading new private key...");
-            downloadNewPrivateKey(
-                newIdentity.privateKey,
-                newEncryptedPrivKey,
-                newSalt
-            );
+            clearWalletEncryptionIdentityCache();
+            setEncryptionIdentity(null);
+            setStatusMessage("Phrase rotated. Sign the new phrase in MetaMask to activate the new key...");
+            const identity = await deriveWalletEncryptionIdentity(token, accounts[0]);
+            setEncryptionIdentity(identity);
 
-            // --- STEP 5: Success Handling ---
-            setLoading(false);
-            setStatusMessage(`✅ Success! Keys regenerated and downloaded. New Public Key: ${newIdentity.publicKey.substring(0, 10)}...`);
-            
-            // Close modal and reset
+            setStatusMessage(`Key rotated and activated for this session (${identity.publicKey.slice(0, 10)}…).`);
             setShowWarningModal(false);
             setConfirmPassword("");
             setHasAcknowledged(false);
-            setPassword("");
-
-            // Optional: Refresh user data or redirect to login
-            // You might want to call a refresh function from your auth context here
-
         } catch (error) {
-            setLoading(false);
-            const errorMessage = axios.isAxiosError(error) 
+            const errorMessage = axios.isAxiosError(error)
                 ? (error.response?.data?.message || error.response?.data?.error || 'API call failed.')
-                : 'An unexpected error occurred.';
-            
-            setStatusMessage(`❌ Key Regeneration Failed: ${errorMessage}. Please check your password.`);
-            console.error("Key Regeneration Error:", error);
+                : error instanceof Error ? error.message : 'An unexpected error occurred.';
+
+            setStatusMessage(`❌ Key rotation failed: ${errorMessage}`);
+            console.error("Key rotation error:", errorMessage);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -209,10 +144,10 @@ export function ProfileSettings() {
                                     <Download className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
                                     <div>
                                         <p className="text-sm font-semibold text-green-300 mb-1">
-                                            ✅ Your new private key will be downloaded automatically
+                                            ✅ MetaMask will derive your new encryption key
                                         </p>
                                         <p className="text-sm text-green-400">
-                                            After regeneration, a JSON file containing your new private key will be automatically downloaded. Keep this file secure!
+                                            After rotation, sign the new server phrase in MetaMask. The derived private key remains in browser memory and is not downloaded or stored.
                                         </p>
                                     </div>
                                 </div>
@@ -226,10 +161,10 @@ export function ProfileSettings() {
                                             Before proceeding:
                                         </p>
                                         <ul className="text-sm text-blue-400 space-y-1">
-                                            <li>• Download all important files with old keys</li>
-                                            <li>• Save them to a secure location</li>
-                                            <li>• Verify files are accessible</li>
-                                            <li>• After regeneration, re-upload files to encrypt with new keys</li>
+                                            <li>• Download files encrypted with the current key before rotating</li>
+                                            <li>• Rotation makes the previous key unavailable</li>
+                                            <li>• Sign the new phrase with MetaMask after rotation</li>
+                                            <li>• Re-share files using the new encryption key</li>
                                         </ul>
                                     </div>
                                 </div>
@@ -258,7 +193,7 @@ export function ProfileSettings() {
                                         className="mt-1"
                                     />
                                     <span className="text-sm text-zinc-300">
-                                        I understand that this action is permanent, I have downloaded all important files, and I will securely save my new private key
+                                        I understand that this action is permanent, I have downloaded important files, and I will sign the new phrase with my MetaMask wallet
                                     </span>
                                 </label>
                             </div>
