@@ -62,7 +62,7 @@ if (-not $chainReady) {
     throw 'Hardhat did not become ready on http://127.0.0.1:8545 within 60 seconds.'
 }
 
-Write-Host 'Hardhat is ready. Deploying Registry first to preserve the frontend address...'
+Write-Host 'Hardhat is ready. Deploying Registry...'
 Push-Location $contractsPath
 try {
     & npx.cmd hardhat run scripts/deployRegistry.ts --network localhost
@@ -70,10 +70,6 @@ try {
         throw 'Registry deployment failed.'
     }
 
-    & npx.cmd hardhat run scripts/deployWalletTextRegistry.ts --network localhost
-    if ($LASTEXITCODE -ne 0) {
-        throw 'WalletTextRegistry deployment failed.'
-    }
 } finally {
     Pop-Location
 }

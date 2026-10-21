@@ -379,11 +379,15 @@ export const rotateKeyPhrase = [
       user.key_phrase = randomBytes(32).toString('hex');
       user.wallet_address = undefined;
       user.public_key = undefined;
+      user.encrypted_private_key = undefined;
+      user.salt = undefined;
       await user.save();
 
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+      res.set('Pragma', 'no-cache');
       res.status(200).json({
         success: true,
-        message: 'Key phrase rotated. Sign in with MetaMask to register the new encryption key.'
+        message: 'Key phrase rotated and previous encryption-key metadata revoked. Sign the new phrase with MetaMask to register a replacement key.'
       });
     } catch (error) {
       console.error('Rotate key phrase error:', error);

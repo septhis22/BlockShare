@@ -19,6 +19,7 @@ interface AuthContextType {
   walletAddress: string | null;
   encryptionIdentity: WalletEncryptionIdentity | null;
   setEncryptionIdentity: (identity: WalletEncryptionIdentity | null) => void;
+  updatePublicKey: (publicKey: string) => void;
   connectWallet: () => Promise<string>;
   login: (email: string, password: string, walletAddress: string) => Promise<void>;
   register: (name: string, email: string, password: string, walletAddress: string) => Promise<void>;
@@ -53,8 +54,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const storedUser = localStorage.getItem('user');
     if (storedToken && storedUser) {
       try {
+        const storedProfile = JSON.parse(storedUser) as Partial<User>;
+        if (
+          typeof storedProfile.id !== 'string'
+          || typeof storedProfile.name !== 'string'
+          || typeof storedProfile.email !== 'string'
+        ) {
+          throw new Error('Stored profile is invalid');
+        }
+
+        const safeProfile: User = {
+          id: storedProfile.id,
+          name: storedProfile.name,
+          email: storedProfile.email,
+          public_key: ''
+        };
         setToken(storedToken);
-        setUser(JSON.parse(storedUser));
+        setUser(safeProfile);
+        localStorage.setItem('user', JSON.stringify({
+          id: safeProfile.id,
+          name: safeProfile.name,
+          email: safeProfile.email
+        }));
+        void axios.get('http://localhost:5000/api/auth/profile', {
+          headers: { Authorization: `Bearer ${storedToken}` }
+        }).then(response => {
+          const serverUser = response.data?.data?.user as User | undefined;
+          if (serverUser?.id === safeProfile.id && typeof serverUser.public_key === 'string') {
+            setUser(currentUser => currentUser?.id === safeProfile.id
+              ? { ...currentUser, public_key: serverUser.public_key }
+              : currentUser);
+          }
+        }).catch(() => undefined);
       } catch {
         setToken(null);
         setUser(null);
@@ -132,7 +163,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setEncryptionIdentity(identity);
     setWalletAddress(identity.address);
     localStorage.setItem('token', newToken);
-    localStorage.setItem('user', JSON.stringify(activeUser));
+    localStorage.setItem('user', JSON.stringify({
+      id: activeUser.id,
+      name: activeUser.name,
+      email: activeUser.email
+    }));
   };
 
   const login = async (email: string, password: string, connectedAddress: string) => {
@@ -168,6 +203,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updatePublicKey = (publicKey: string) => {
+    if (!user) return;
+    setUser({ ...user, public_key: publicKey });
+    localStorage.setItem('user', JSON.stringify({
+      id: user.id,
+      name: user.name,
+      email: user.email
+    }));
+  };
+
   const logout = () => {
     clearWalletEncryptionIdentityCache();
     setUser(null);
@@ -183,6 +228,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     walletAddress,
     encryptionIdentity,
     setEncryptionIdentity,
+    updatePublicKey,
     connectWallet,
     login,
     register,

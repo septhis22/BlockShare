@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useAuth } from "../context/AuthContext";
 import {
     clearWalletEncryptionIdentityCache,
     deriveWalletEncryptionIdentity
 } from '../utils/walletEncryption';
+
 import { RefreshCw, Key, AlertTriangle, Download } from 'lucide-react';
 
 /**
@@ -12,17 +14,17 @@ import { RefreshCw, Key, AlertTriangle, Download } from 'lucide-react';
  * This is a critical security operation.
  */
 export function ProfileSettings() {
-    const { user, token, setEncryptionIdentity } = useAuth();
+    const { user, token, walletAddress, setEncryptionIdentity, updatePublicKey } = useAuth();
 
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [rotatedPublicKey, setRotatedPublicKey] = useState<string | null>(null);
     
     // New state for warning modal
     const [showWarningModal, setShowWarningModal] = useState(false);
     const [confirmPassword, setConfirmPassword] = useState('');
     const [hasAcknowledged, setHasAcknowledged] = useState(false);
 
-    // Placeholder for the API URL (ensure this matches your server config)
     const API_URL = 'http://localhost:5000/api/auth/rotate-key-phrase';
 
     // This function orchestrates the entire key revocation and update process.
@@ -43,26 +45,38 @@ export function ProfileSettings() {
         }
 
         setLoading(true);
-        setStatusMessage("Verifying your password and rotating the server key phrase...");
+        setRotatedPublicKey(null);
+        setStatusMessage("Verifying your password and revoking the current key...");
+        let phraseRotated = false;
+        let replacementKeyRegistered = false;
 
         try {
             if (!window.ethereum) throw new Error("MetaMask is required to rotate the encryption key.");
             const accounts: string[] = await window.ethereum.request({ method: "eth_requestAccounts" });
-            if (!accounts.length) throw new Error("Connect a MetaMask account to continue.");
+            const activeAddress = accounts[0];
+            if (!activeAddress) throw new Error("Connect a MetaMask account to continue.");
+            if (walletAddress && activeAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+                throw new Error("The selected MetaMask account changed. Reconnect the account shown in BlockShare and try again.");
+            }
 
             await axios.post(
                 API_URL,
                 { password: confirmPassword },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
+            phraseRotated = true;
 
             clearWalletEncryptionIdentityCache();
             setEncryptionIdentity(null);
-            setStatusMessage("Phrase rotated. Sign the new phrase in MetaMask to activate the new key...");
-            const identity = await deriveWalletEncryptionIdentity(token, accounts[0]);
+            updatePublicKey("");
+            setStatusMessage("Current key revoked. Sign the new private phrase in MetaMask to derive a replacement...");
+            const identity = await deriveWalletEncryptionIdentity(token, activeAddress);
             setEncryptionIdentity(identity);
+            updatePublicKey(identity.publicKey);
+            replacementKeyRegistered = true;
 
-            setStatusMessage(`Key rotated and activated for this session (${identity.publicKey.slice(0, 10)}…).`);
+            setRotatedPublicKey(identity.publicKey);
+            setStatusMessage("Key rotated successfully. The new public key is registered on your server.");
             setShowWarningModal(false);
             setConfirmPassword("");
             setHasAcknowledged(false);
@@ -71,7 +85,19 @@ export function ProfileSettings() {
                 ? (error.response?.data?.message || error.response?.data?.error || 'API call failed.')
                 : error instanceof Error ? error.message : 'An unexpected error occurred.';
 
-            setStatusMessage(`❌ Key rotation failed: ${errorMessage}`);
+            if (replacementKeyRegistered) {
+                setStatusMessage(`⚠️ The new key is active, but the rotation flow did not finish: ${errorMessage}`);
+                setShowWarningModal(false);
+                setConfirmPassword("");
+                setHasAcknowledged(false);
+            } else if (phraseRotated) {
+                setStatusMessage(`⚠️ The previous key is revoked, but replacement-key activation did not finish: ${errorMessage} You can retry by signing in with MetaMask.`);
+                setShowWarningModal(false);
+                setConfirmPassword("");
+                setHasAcknowledged(false);
+            } else {
+                setStatusMessage(`❌ Key rotation failed: ${errorMessage}`);
+            }
             console.error("Key rotation error:", errorMessage);
         } finally {
             setLoading(false);
@@ -106,20 +132,34 @@ export function ProfileSettings() {
                 </button>
 
                 {statusMessage && (
-                    <p className={`mt-4 p-3 rounded-lg text-center font-medium ${statusMessage.startsWith('❌') ? 'bg-red-900/50 text-red-300' : 'bg-green-900/50 text-green-300'}`}>
+                    <p className={`mt-4 p-3 rounded-lg text-center font-medium ${statusMessage.startsWith('❌') ? 'bg-red-900/50 text-red-300' : statusMessage.startsWith('⚠️') ? 'bg-amber-900/50 text-amber-200' : 'bg-green-900/50 text-green-300'}`}>
                         {statusMessage}
                     </p>
                 )}
                 
                 <p className="mt-4 text-xs text-zinc-400">
-                    Current Public Key: {user.public_key.substring(0, 40)}...
+                    Current Server Public Key: {user.public_key ? `${user.public_key.substring(0, 40)}…` : 'Not registered'}
                 </p>
             </div>
 
+            {rotatedPublicKey && (
+                <section className="mt-4 rounded-xl border border-emerald-500/40 bg-zinc-900 p-5 text-left text-zinc-200">
+                    <h4 className="mb-2 text-lg font-bold text-emerald-300">New server public key</h4>
+                    <p className="break-all font-mono text-xs">{rotatedPublicKey}</p>
+                    <p className="mt-3 text-xs text-zinc-400">This key is held in the active browser session and persisted by the server only.</p>
+                </section>
+            )}
+
             {/* Warning Modal */}
-            {showWarningModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-                    <div className="bg-zinc-900 rounded-lg shadow-xl max-w-md w-full p-6 border border-red-500/50">
+            {showWarningModal && createPortal(
+                <div
+                    className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label="Confirm encryption key rotation"
+                >
+                    <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg">
+                    <div className="bg-zinc-900 rounded-lg shadow-xl w-full p-6 border border-red-500/50">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="bg-red-900/50 rounded-full p-3">
                                 <AlertTriangle className="w-6 h-6 text-red-400" />
@@ -147,7 +187,7 @@ export function ProfileSettings() {
                                             ✅ MetaMask will derive your new encryption key
                                         </p>
                                         <p className="text-sm text-green-400">
-                                            After rotation, sign the new server phrase in MetaMask. The derived private key remains in browser memory and is not downloaded or stored.
+                                            After rotation, sign the new server phrase in MetaMask. The derived private key remains in browser memory and is not downloaded or stored. The replacement public key is registered with the server; no blockchain transaction is used.
                                         </p>
                                     </div>
                                 </div>
@@ -164,6 +204,7 @@ export function ProfileSettings() {
                                             <li>• Download files encrypted with the current key before rotating</li>
                                             <li>• Rotation makes the previous key unavailable</li>
                                             <li>• Sign the new phrase with MetaMask after rotation</li>
+                                            <li>• The replacement public key is saved on the server only</li>
                                             <li>• Re-share files using the new encryption key</li>
                                         </ul>
                                     </div>
@@ -227,7 +268,9 @@ export function ProfileSettings() {
                             </button>
                         </div>
                     </div>
-                </div>
+                    </div>
+                </div>,
+                document.body
             )}
         </>
     );

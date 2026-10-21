@@ -1,5 +1,6 @@
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import RegistryUploader from './pages/RegistryUploader';
 import { World } from './components/ui/globe';
 import BlurText from "./components/BlurText";
@@ -11,11 +12,13 @@ import WalletLoginPage from './pages/walletLoginPage';
 import ReceiveFiles from './pages/ReceiveFiles';
 import { useAuth } from './context/AuthContext';
 import ShinyText from "./components/ShinyText.tsx";
+import { ProfileSettings } from "./components/profileSetting";
 
 export function GlobeDemo() {
   const { user, logout, walletAddress, connectWallet } = useAuth();
   const navigate = useNavigate();
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
+  const [showKeySettings, setShowKeySettings] = useState(false);
 
   const handleConnectWallet = async () => {
     setWalletConnectError(null);
@@ -476,6 +479,12 @@ export function GlobeDemo() {
                    >
                      Receive
                    </button>
+                   <button
+                     onClick={() => setShowKeySettings(true)}
+                     className="border border-red-300/80 text-red-100 hover:bg-red-500 hover:text-white px-8 py-3 rounded-lg font-semibold transition"
+                   >
+                     Revoke &amp; Rotate Key
+                   </button>
                  </>
                ) : !user && walletAddress ? (
                  <>
@@ -491,6 +500,30 @@ export function GlobeDemo() {
                )}
              </div>
              {walletConnectError && <p role="alert" className="mt-4 text-sm text-red-300">{walletConnectError}</p>}
+             {showKeySettings && createPortal(
+               <div
+                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-label="Revoke and rotate encryption key"
+                 onMouseDown={event => {
+                   if (event.target === event.currentTarget) setShowKeySettings(false);
+                 }}
+               >
+                 <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl">
+                   <div className="mb-2 flex justify-end">
+                     <button
+                       onClick={() => setShowKeySettings(false)}
+                       className="rounded border border-white/30 px-3 py-1 text-sm text-white hover:bg-white/10"
+                     >
+                       Close
+                     </button>
+                   </div>
+                   <ProfileSettings />
+                 </div>
+               </div>,
+               document.body
+             )}
           </div>
         </div>
       </div>
